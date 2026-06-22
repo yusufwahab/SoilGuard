@@ -23,7 +23,7 @@ function Toggle({ checked, onChange }) {
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+      className={`relative inline-flex w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 shrink-0 ${
         checked ? "bg-accent" : "bg-surface-300"
       }`}
     >
@@ -38,10 +38,10 @@ function Toggle({ checked, onChange }) {
 
 function Field({ label, sub, children }) {
   return (
-    <div className="flex items-center justify-between py-3.5 border-b border-surface-100 last:border-0">
-      <div>
+    <div className="flex items-center justify-between gap-4 py-3.5 border-b border-surface-100 last:border-0">
+      <div className="min-w-0">
         <p className="text-sm text-surface-900 font-medium">{label}</p>
-        {sub && <p className="text-xs text-surface-400 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-surface-400 mt-0.5 leading-snug">{sub}</p>}
       </div>
       {children}
     </div>
@@ -63,12 +63,12 @@ function InputRow({ label, type = "text", defaultValue, placeholder }) {
 }
 
 export default function Settings() {
-  const [activeTab, setActiveTab]         = useState("account");
-  const [dash, setDash]                   = useState(true);
-  const [whatsapp, setWhatsapp]           = useState(false);
-  const [email, setEmail]                 = useState(false);
+  const [activeTab, setActiveTab]           = useState("account");
+  const [dash, setDash]                     = useState(true);
+  const [whatsapp, setWhatsapp]             = useState(false);
+  const [email, setEmail]                   = useState(false);
   const [requireConfirm, setRequireConfirm] = useState(true);
-  const [allowAuto, setAllowAuto]         = useState(false);
+  const [allowAuto, setAllowAuto]           = useState(false);
 
   return (
     <motion.div
@@ -77,14 +77,15 @@ export default function Settings() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="flex gap-6">
-        {/* Sub-nav */}
-        <nav className="w-44 shrink-0 space-y-0.5">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+
+        {/* ── Tab nav — horizontal scroll on mobile, vertical on sm+ ── */}
+        <nav className="flex sm:flex-col gap-1 sm:gap-0.5 sm:space-y-0.5 sm:w-44 shrink-0 overflow-x-auto pb-1 sm:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
+              className={`shrink-0 sm:w-full text-left px-3 py-2 text-sm rounded-lg transition-colors whitespace-nowrap ${
                 activeTab === t.id
                   ? "bg-surface-200 text-surface-900 font-semibold"
                   : "text-surface-500 hover:text-surface-900 hover:bg-surface-100"
@@ -95,7 +96,7 @@ export default function Settings() {
           ))}
         </nav>
 
-        {/* Content */}
+        {/* ── Content panel ── */}
         <div className="flex-1 min-w-0">
           <AnimatePresence mode="wait">
             <motion.div
@@ -113,7 +114,7 @@ export default function Settings() {
                     <InputRow label="Full name" defaultValue="Farmer Kalu" />
                     <InputRow label="Email address" type="email" defaultValue="farmer.kalu@soilguard.ag" />
                     <InputRow label="Password" type="password" defaultValue="••••••••" />
-                    <div className="pt-2 flex items-center gap-3">
+                    <div className="pt-2 flex flex-wrap items-center gap-3">
                       <button className="px-4 py-2 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
                         Save changes
                       </button>
@@ -128,17 +129,15 @@ export default function Settings() {
               {activeTab === "notifications" && (
                 <Card padding="lg">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-5">Notifications</p>
-                  <div className="max-w-sm">
-                    <Field label="Dashboard alerts" sub="In-app push notifications">
-                      <Toggle checked={dash} onChange={setDash} />
-                    </Field>
-                    <Field label="WhatsApp alerts" sub="+234 801 234 5678 — works without strong internet">
-                      <Toggle checked={whatsapp} onChange={setWhatsapp} />
-                    </Field>
-                    <Field label="Email digest" sub="Daily summary every morning">
-                      <Toggle checked={email} onChange={setEmail} />
-                    </Field>
-                  </div>
+                  <Field label="Dashboard alerts" sub="In-app push notifications">
+                    <Toggle checked={dash} onChange={setDash} />
+                  </Field>
+                  <Field label="WhatsApp alerts" sub="+234 801 234 5678 — works without strong internet">
+                    <Toggle checked={whatsapp} onChange={setWhatsapp} />
+                  </Field>
+                  <Field label="Email digest" sub="Daily summary every morning">
+                    <Toggle checked={email} onChange={setEmail} />
+                  </Field>
                 </Card>
               )}
 
@@ -149,18 +148,18 @@ export default function Settings() {
                     {DEVICES.map((d) => (
                       <div
                         key={d.id}
-                        className="flex items-center justify-between py-2.5 px-3 bg-surface-100/60 rounded-lg border border-surface-200 hover:border-surface-300 transition-colors"
+                        className="flex items-center justify-between gap-3 py-2.5 px-3 bg-surface-100/60 rounded-lg border border-surface-200 hover:border-surface-300 transition-colors"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <StatusDot status={d.connectivity} />
-                          <div>
-                            <p className="text-sm font-medium text-surface-900">{d.field}</p>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-surface-900 truncate">{d.field}</p>
                             <p className="text-xs text-surface-400">
                               {d.id} &middot; Battery {d.battery}%
                             </p>
                           </div>
                         </div>
-                        <button className="text-xs text-semantic-red hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-semantic-red/30 rounded">
+                        <button className="shrink-0 text-xs text-semantic-red hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-semantic-red/30 rounded">
                           Remove
                         </button>
                       </div>
@@ -174,24 +173,22 @@ export default function Settings() {
                   <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-5">
                     Actuation Preferences
                   </p>
-                  <div className="max-w-sm">
-                    <Field
-                      label="Require confirmation"
-                      sub="Show a confirmation step before any pump actuation"
-                    >
-                      <Toggle checked={requireConfirm} onChange={setRequireConfirm} />
-                    </Field>
-                    <Field
-                      label="Auto-correct minor issues"
-                      sub={<span className="text-semantic-amber">Lets the system act without a manual click</span>}
-                    >
-                      <Toggle checked={allowAuto} onChange={setAllowAuto} />
-                    </Field>
-                    <p className="text-xs text-surface-400 leading-relaxed mt-5">
-                      By design, SoilGuard defaults to manual confirmation. The AI informs and recommends
-                      — the farmer retains authority over every actuation.
-                    </p>
-                  </div>
+                  <Field
+                    label="Require confirmation"
+                    sub="Show a confirmation step before any pump actuation"
+                  >
+                    <Toggle checked={requireConfirm} onChange={setRequireConfirm} />
+                  </Field>
+                  <Field
+                    label="Auto-correct minor issues"
+                    sub={<span className="text-semantic-amber">Lets the system act without a manual click</span>}
+                  >
+                    <Toggle checked={allowAuto} onChange={setAllowAuto} />
+                  </Field>
+                  <p className="text-xs text-surface-400 leading-relaxed mt-5">
+                    By design, SoilGuard defaults to manual confirmation. The AI informs and recommends
+                    — the farmer retains authority over every actuation.
+                  </p>
                 </Card>
               )}
 

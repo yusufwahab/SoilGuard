@@ -12,7 +12,7 @@ function StatusPill({ status }) {
     dismissed: "text-surface-400 bg-surface-100",
   };
   return (
-    <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${styles[status] ?? styles.dismissed}`}>
+    <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${styles[status] ?? styles.dismissed}`}>
       {status}
     </span>
   );
@@ -22,7 +22,7 @@ function FilterPill({ active, onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className={`text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
+      className={`shrink-0 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
         active ? "bg-surface-200 text-surface-900" : "text-surface-500 hover:text-surface-800 hover:bg-surface-100"
       }`}
     >
@@ -66,7 +66,7 @@ export default function Alerts() {
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5">
         <p className="text-xs text-surface-400">
           {activeCount > 0 ? (
             <span className="text-semantic-amber font-semibold">{activeCount} active</span>
@@ -78,10 +78,10 @@ export default function Alerts() {
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
+      {/* Filters — horizontally scrollable on mobile */}
+      <div className="flex flex-wrap items-center gap-2 mb-5 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto pb-1">
         <select
-          className="text-xs bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 text-surface-600 focus:outline-none focus:border-surface-400 transition-colors"
+          className="shrink-0 text-xs bg-surface-50 border border-surface-200 rounded-lg px-3 py-1.5 text-surface-600 focus:outline-none focus:border-surface-400 transition-colors"
           value={filterField}
           onChange={(e) => setFilterField(e.target.value)}
         >
@@ -93,8 +93,8 @@ export default function Alerts() {
 
         <div className="flex gap-1">
           {[
-            { val: "all", label: "All" },
-            { val: "active", label: "Active" },
+            { val: "all",      label: "All" },
+            { val: "active",   label: "Active" },
             { val: "resolved", label: "Resolved" },
           ].map((s) => (
             <FilterPill key={s.val} active={filterStatus === s.val} onClick={() => setFilterStatus(s.val)}>
@@ -105,9 +105,9 @@ export default function Alerts() {
 
         <div className="flex gap-1">
           {[
-            { val: "all", label: "All types" },
-            { val: "crop_stress", label: "Crop stress" },
-            { val: "corrosion", label: "Corrosion" },
+            { val: "all",        label: "All types" },
+            { val: "crop_stress",label: "Crop stress" },
+            { val: "corrosion",  label: "Corrosion" },
           ].map((t) => (
             <FilterPill key={t.val} active={filterType === t.val} onClick={() => setFilterType(t.val)}>
               {t.label}
@@ -125,6 +125,9 @@ export default function Alerts() {
         <div className="space-y-1.5">
           {filtered.map((alert, i) => {
             const isOpen = expandedId === alert.id;
+            const dateStr = new Date(alert.createdAt).toLocaleString(undefined, {
+              month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+            });
             return (
               <motion.div
                 key={alert.id}
@@ -133,29 +136,34 @@ export default function Alerts() {
                 transition={{ duration: 0.3, delay: i * 0.04, ease: [0.22, 1, 0.36, 1] }}
               >
                 <Card padding="none" className="overflow-hidden">
-                  {/* Row */}
+                  {/* ── Alert row ── */}
                   <button
-                    className="w-full flex items-center gap-4 px-5 py-3.5 text-left hover:bg-surface-100/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-surface-100/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                     onClick={() => setExpandedId(isOpen ? null : alert.id)}
                     aria-expanded={isOpen}
                   >
                     <span className="text-surface-300 shrink-0">
                       {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                     </span>
-                    <span className="text-xs text-surface-400 shrink-0 w-32">
-                      {new Date(alert.createdAt).toLocaleString(undefined, {
-                        month: "short", day: "numeric",
-                        hour: "2-digit", minute: "2-digit",
-                      })}
-                    </span>
-                    <span className="text-sm font-semibold text-surface-900 shrink-0 w-28 truncate">
-                      {alert.fieldName}
-                    </span>
-                    <span className="text-sm text-surface-600 flex-1 truncate">{alert.headline}</span>
+
+                    {/* Mobile layout: stacked */}
+                    <div className="flex-1 min-w-0 sm:hidden">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <span className="text-sm font-semibold text-surface-900 truncate">{alert.fieldName}</span>
+                        <StatusPill status={alert.status} />
+                      </div>
+                      <span className="text-xs text-surface-500 truncate block">{alert.headline}</span>
+                      <span className="text-[10px] text-surface-400 mt-0.5 block">{dateStr}</span>
+                    </div>
+
+                    {/* Desktop layout: inline columns */}
+                    <span className="hidden sm:inline text-xs text-surface-400 shrink-0 w-32">{dateStr}</span>
+                    <span className="hidden sm:inline text-sm font-semibold text-surface-900 shrink-0 w-28 truncate">{alert.fieldName}</span>
+                    <span className="hidden sm:inline text-sm text-surface-600 flex-1 truncate">{alert.headline}</span>
                     <StatusPill status={alert.status} />
                   </button>
 
-                  {/* Expanded */}
+                  {/* ── Expanded detail ── */}
                   <AnimatePresence>
                     {isOpen && (
                       <motion.div
@@ -165,7 +173,7 @@ export default function Alerts() {
                         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                         className="overflow-hidden"
                       >
-                        <div className="px-5 pb-5 pt-3 border-t border-surface-100">
+                        <div className="px-4 sm:px-5 pb-5 pt-3 border-t border-surface-100">
                           <p className="text-sm text-surface-600 leading-relaxed mb-3">
                             {alert.recommendation}
                           </p>
@@ -176,7 +184,7 @@ export default function Alerts() {
                               </span>
                             ))}
                           </div>
-                          <div className="flex items-center gap-4">
+                          <div className="flex flex-wrap items-center gap-3">
                             {alert.status === "active" && (
                               <>
                                 {alert.actionable && (

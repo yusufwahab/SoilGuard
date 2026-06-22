@@ -221,7 +221,7 @@ export default function FieldDetail() {
           <span className="shrink-0 text-[11px] font-semibold bg-surface-200 text-surface-600 px-2 py-0.5 rounded">
             {node.crop}
           </span>
-          <div className="flex items-center gap-1.5 text-xs text-surface-500 shrink-0">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs text-surface-500 shrink-0">
             <StatusDot status={node.connectivity} />
             <span>updated {timeAgo(node.lastSeen)}</span>
           </div>
@@ -245,7 +245,7 @@ export default function FieldDetail() {
           <StatusDot status={node.connectivity} className="shrink-0" />
           <span>{connLabel}</span>
         </div>
-        <span className="ml-auto text-surface-400 font-mono text-[11px]">{node.id}</span>
+        <span className="sm:ml-auto text-surface-400 font-mono text-[11px]">{node.id}</span>
       </div>
 
       {/* ── Live readings row ── */}

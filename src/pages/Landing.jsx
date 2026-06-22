@@ -137,7 +137,7 @@ function DashboardPreview() {
   const bar = (v) => v > 66 ? "bg-semantic-red" : v > 33 ? "bg-semantic-amber" : "bg-semantic-green";
 
   return (
-    <div className="relative mx-auto max-w-4xl mt-14 px-4">
+    <div className="relative mx-auto max-w-4xl mt-8 sm:mt-14 px-2 sm:px-4">
       <motion.div
         initial={{ opacity: 0, y: 30, rotateX: 12 }}
         animate={{ opacity: 1, y: 0, rotateX: 5 }}
@@ -222,12 +222,12 @@ function DashboardPreview() {
         </div>
       </motion.div>
 
-      {/* Floating prescription card */}
+      {/* Floating prescription card — hidden on small screens */}
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
-        className="absolute -bottom-5 right-8 bg-surface-50 border border-surface-200 rounded-xl p-3.5 shadow-xl w-60"
+        className="hidden sm:block absolute -bottom-5 right-8 bg-surface-50 border border-surface-200 rounded-xl p-3.5 shadow-xl w-60"
         style={{ borderLeft: "3px solid #f59e0b" }}
       >
         <p className="text-[8px] font-bold uppercase tracking-widest text-semantic-amber mb-1">Crop stress alert</p>
@@ -260,11 +260,11 @@ export default function Landing() {
       <Grain />
 
       {/* ── Nav ── */}
-      <nav className="flex items-center justify-between px-8 py-4 border-b border-surface-200 bg-surface-50/95 backdrop-blur-sm sticky top-0 z-40">
+      <nav className="flex items-center justify-between px-4 sm:px-8 py-4 border-b border-surface-200 bg-surface-50/95 backdrop-blur-sm sticky top-0 z-40">
         <span className="text-sm font-bold tracking-tight select-none">SoilGuard</span>
-        <div className="flex items-center gap-5">
-          <a href="#how" className="text-sm text-surface-500 hover:text-surface-900 transition-colors">How it works</a>
-          <a href="#hardware" className="text-sm text-surface-500 hover:text-surface-900 transition-colors hidden sm:block">Hardware</a>
+        <div className="flex items-center gap-3 sm:gap-5">
+          <a href="#how" className="hidden sm:block text-sm text-surface-500 hover:text-surface-900 transition-colors">How it works</a>
+          <a href="#hardware" className="hidden md:block text-sm text-surface-500 hover:text-surface-900 transition-colors">Hardware</a>
           <button
             onClick={() => navigate("/login")}
             className="px-4 py-1.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
@@ -275,7 +275,7 @@ export default function Landing() {
       </nav>
 
       {/* ── Hero ── */}
-      <section className="relative px-6 pt-20 pb-36 text-center overflow-hidden bg-surface-50">
+      <section className="relative px-4 sm:px-6 pt-16 sm:pt-20 pb-16 sm:pb-36 text-center overflow-hidden bg-surface-50">
         {/* Permitted radial glow */}
         <div className="absolute inset-0 flex items-start justify-center pointer-events-none" aria-hidden>
           <div
@@ -293,7 +293,7 @@ export default function Landing() {
             Agri-tech sensing system — Nigeria
           </motion.p>
           <motion.h1
-            className="text-5xl sm:text-[4rem] font-bold tracking-tight text-surface-900 leading-[1.06] mb-5"
+            className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-surface-900 leading-[1.06] mb-5"
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08, ease: [0.22,1,0.36,1] }}
           >
@@ -308,19 +308,19 @@ export default function Landing() {
             and buried irrigation infrastructure from invisible damage.
           </motion.p>
           <motion.div
-            className="flex items-center justify-center gap-3"
+            className="flex flex-col sm:flex-row items-center justify-center gap-3"
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.22, ease: [0.22,1,0.36,1] }}
           >
             <button
               onClick={() => navigate("/login")}
-              className="px-5 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
             >
               View Dashboard
             </button>
             <a
               href="#how"
-              className="px-5 py-2.5 text-sm font-bold text-surface-600 border border-surface-200 rounded-lg hover:border-surface-300 hover:text-surface-900 transition-colors"
+              className="w-full sm:w-auto text-center px-5 py-2.5 text-sm font-bold text-surface-600 border border-surface-200 rounded-lg hover:border-surface-300 hover:text-surface-900 transition-colors"
             >
               How it works
             </a>
@@ -474,7 +474,7 @@ export default function Landing() {
         <Reveal delay={0.1} y={16}>
           <HardwareDiagram />
         </Reveal>
-        <div className="grid grid-cols-3 gap-6 mt-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-6 mt-8">
           {[
             { label: "ESP32 Sensing Node",  desc: "Capacitive moisture, pH, EC probe, DHT22 temp/humidity. Solar-powered and offline-first." },
             { label: "Solar + 18650 Battery", desc: "Charges in sunlight, runs through the night. Buffers readings locally when offline." },
@@ -500,16 +500,16 @@ export default function Landing() {
             <p className="text-sm text-surface-500 mb-8 leading-relaxed max-w-sm mx-auto">
               Set up your first sensing node in minutes and get your first AI recommendation the same day.
             </p>
-            <div className="flex items-center justify-center gap-3">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
                 onClick={() => navigate("/login")}
-                className="px-6 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
               >
                 View Dashboard
               </button>
               <button
                 onClick={() => navigate("/onboarding")}
-                className="px-6 py-2.5 text-sm font-bold text-surface-600 border border-surface-200 rounded-lg hover:border-surface-300 hover:text-surface-900 transition-colors"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-bold text-surface-600 border border-surface-200 rounded-lg hover:border-surface-300 hover:text-surface-900 transition-colors"
               >
                 Set up a field
               </button>
@@ -519,10 +519,10 @@ export default function Landing() {
       </Section>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-surface-200 px-8 py-5 bg-surface-50">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      <footer className="border-t border-surface-200 px-4 sm:px-8 py-5 bg-surface-50">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span className="text-xs font-bold text-surface-500 select-none">SoilGuard</span>
-          <span className="text-xs text-surface-400">Predicting crop and infrastructure failure before it costs you.</span>
+          <span className="text-xs text-surface-400 text-center sm:text-right">Predicting crop and infrastructure failure before it costs you.</span>
         </div>
       </footer>
     </div>
