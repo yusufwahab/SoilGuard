@@ -137,7 +137,7 @@ function DashboardPreview() {
   const bar = (v) => v > 66 ? "bg-semantic-red" : v > 33 ? "bg-semantic-amber" : "bg-semantic-green";
 
   return (
-    <div className="relative mx-auto max-w-4xl mt-8 sm:mt-14 px-2 sm:px-4">
+    <div className="relative mx-auto max-w-4xl mt-8 sm:mt-14 px-2 sm:px-4 pb-20 sm:pb-36">
       <motion.div
         initial={{ opacity: 0, y: 30, rotateX: 12 }}
         animate={{ opacity: 1, y: 0, rotateX: 5 }}
@@ -261,7 +261,7 @@ export default function Landing() {
 
       {/* ── Nav ── */}
       <nav className="flex items-center justify-between px-4 sm:px-8 py-4 border-b border-surface-200 bg-surface-50/95 backdrop-blur-sm sticky top-0 z-40">
-        <span className="text-sm font-bold tracking-tight select-none">SoilGuard</span>
+        <button onClick={() => navigate("/")} className="text-sm font-bold tracking-tight select-none hover:text-accent transition-colors">SoilGuard</button>
         <div className="flex items-center gap-3 sm:gap-5">
           <a href="#how" className="hidden sm:block text-sm text-surface-500 hover:text-surface-900 transition-colors">How it works</a>
           <a href="#hardware" className="hidden md:block text-sm text-surface-500 hover:text-surface-900 transition-colors">Hardware</a>
@@ -275,32 +275,37 @@ export default function Landing() {
       </nav>
 
       {/* ── Hero ── */}
-      <section className="relative px-4 sm:px-6 pt-16 sm:pt-20 pb-16 sm:pb-36 text-center overflow-hidden bg-surface-50">
-        {/* Permitted radial glow */}
-        <div className="absolute inset-0 flex items-start justify-center pointer-events-none" aria-hidden>
-          <div
-            className="w-[800px] h-[500px] mt-4 rounded-full"
-            style={{ background: "radial-gradient(ellipse at center, rgba(22,163,74,0.08) 0%, transparent 68%)" }}
+      <section className="relative text-center overflow-hidden">
+        {/* Full-bleed background image */}
+        <div className="absolute inset-0">
+          <img
+            src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1800&q=85"
+            alt="Nigerian farmland"
+            className="w-full h-full object-cover"
+            style={{ filter: "saturate(0.55) brightness(0.45)" }}
           />
+          {/* layered overlays for legibility */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(15,25,15,0.55) 0%, rgba(15,25,15,0.35) 50%, rgba(250,248,245,0.97) 100%)" }} />
+          <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(22,163,74,0.12) 0%, transparent 65%)" }} />
         </div>
 
-        <div className="relative max-w-3xl mx-auto">
+        <div className="relative px-4 sm:px-6 pt-20 sm:pt-28 pb-16 sm:pb-24 max-w-3xl mx-auto">
           <motion.p
-            className="text-[10px] font-bold uppercase tracking-widest text-brand-600 mb-4"
+            className="text-[10px] font-bold uppercase tracking-widest text-brand-400 mb-4"
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.22,1,0.36,1] }}
           >
             Agri-tech sensing system — Nigeria
           </motion.p>
           <motion.h1
-            className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-surface-900 leading-[1.06] mb-5"
+            className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white leading-[1.06] mb-5"
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08, ease: [0.22,1,0.36,1] }}
           >
             Predict soil failure<br className="hidden sm:block" /> before it costs you
           </motion.h1>
           <motion.p
-            className="text-lg text-surface-500 max-w-lg mx-auto mb-8 leading-relaxed"
+            className="text-lg text-white/70 max-w-lg mx-auto mb-8 leading-relaxed"
             initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.16, ease: [0.22,1,0.36,1] }}
           >
@@ -314,16 +319,35 @@ export default function Landing() {
           >
             <button
               onClick={() => navigate("/login")}
-              className="w-full sm:w-auto px-5 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 text-sm font-bold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors shadow-lg shadow-accent/30"
             >
               View Dashboard
             </button>
             <a
               href="#how"
-              className="w-full sm:w-auto text-center px-5 py-2.5 text-sm font-bold text-surface-600 border border-surface-200 rounded-lg hover:border-surface-300 hover:text-surface-900 transition-colors"
+              className="w-full sm:w-auto text-center px-5 py-2.5 text-sm font-bold text-white/80 border border-white/25 rounded-lg hover:border-white/50 hover:text-white transition-colors backdrop-blur-sm"
             >
               How it works
             </a>
+          </motion.div>
+
+          {/* Scroll cue */}
+          <motion.div
+            className="flex justify-center mt-10"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            transition={{ delay: 0.7 }}
+          >
+            <div className="flex flex-col items-center gap-1.5 text-white/30">
+              <span className="text-[10px] uppercase tracking-widest font-semibold">Scroll</span>
+              <motion.div
+                animate={{ y: [0, 5, 0] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <svg width="12" height="18" viewBox="0 0 12 18" fill="none">
+                  <path d="M6 0v14M1 9l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </motion.div>
+            </div>
           </motion.div>
         </div>
 

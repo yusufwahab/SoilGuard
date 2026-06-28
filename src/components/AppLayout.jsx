@@ -7,11 +7,12 @@ import Grain from "./Grain";
 import { SensorProvider } from "../data/SensorContext";
 
 const PAGE_TITLES = {
-  "/app":          "Overview",
-  "/app/fields":   "Fields",
-  "/app/alerts":   "Alerts",
-  "/app/history":  "History & Analytics",
-  "/app/settings": "Settings",
+  "/app":               "Overview",
+  "/app/fields":        "Fields",
+  "/app/ai-dashboard":  "AI Dashboard",
+  "/app/alerts":        "Alerts",
+  "/app/history":       "History & Analytics",
+  "/app/settings":      "Settings",
 };
 
 function AppContent() {

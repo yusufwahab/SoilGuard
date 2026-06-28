@@ -94,6 +94,22 @@ export default function History() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
+      {/* Hero image */}
+      <div className="relative rounded-2xl overflow-hidden h-32">
+        <img
+          src="https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=80"
+          alt="Field analytics"
+          className="w-full h-full object-cover"
+          style={{ filter: "saturate(0.55) brightness(0.88)" }}
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-surface-900/70 to-transparent" />
+        <div className="absolute inset-0 flex flex-col justify-end p-5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">Analytics</p>
+          <h2 className="text-xl font-bold text-white">History &amp; Trend Data</h2>
+        </div>
+      </div>
+
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <select

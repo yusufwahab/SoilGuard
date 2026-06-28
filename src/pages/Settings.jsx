@@ -2,19 +2,13 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Card from "../components/ui/Card";
 import StatusDot from "../components/ui/StatusDot";
+import { useSensorData } from "../data/SensorContext";
 
 const TABS = [
   { id: "account",       label: "Account" },
   { id: "notifications", label: "Notifications" },
   { id: "devices",       label: "Fields & Devices" },
   { id: "actuation",     label: "Actuation" },
-];
-
-const DEVICES = [
-  { id: "SG-001", field: "North Field",    battery: 78, connectivity: "live" },
-  { id: "SG-002", field: "Riverbank Plot", battery: 62, connectivity: "buffered" },
-  { id: "SG-003", field: "Hill Terrace",   battery: 91, connectivity: "live" },
-  { id: "SG-004", field: "South Meadow",   battery: 45, connectivity: "offline" },
 ];
 
 function Toggle({ checked, onChange }) {
@@ -63,6 +57,7 @@ function InputRow({ label, type = "text", defaultValue, placeholder }) {
 }
 
 export default function Settings() {
+  const nodes = useSensorData();
   const [activeTab, setActiveTab]           = useState("account");
   const [dash, setDash]                     = useState(true);
   const [whatsapp, setWhatsapp]             = useState(false);
@@ -77,6 +72,21 @@ export default function Settings() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
+      {/* Hero image */}
+      <div className="relative rounded-2xl overflow-hidden h-28 mb-5">
+        <img
+          src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1200&q=80"
+          alt="Farm settings"
+          className="w-full h-full object-cover"
+          style={{ filter: "saturate(0.5) brightness(0.85)" }}
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-surface-900/70 to-transparent" />
+        <div className="absolute inset-0 flex flex-col justify-end p-5">
+          <h2 className="text-xl font-bold text-white">Settings</h2>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
 
         {/* ── Tab nav — horizontal scroll on mobile, vertical on sm+ ── */}
@@ -145,7 +155,7 @@ export default function Settings() {
                 <Card padding="lg">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-5">Fields & Devices</p>
                   <div className="space-y-2">
-                    {DEVICES.map((d) => (
+                    {nodes.map((d) => (
                       <div
                         key={d.id}
                         className="flex items-center justify-between gap-3 py-2.5 px-3 bg-surface-100/60 rounded-lg border border-surface-200 hover:border-surface-300 transition-colors"
@@ -153,9 +163,9 @@ export default function Settings() {
                         <div className="flex items-center gap-3 min-w-0">
                           <StatusDot status={d.connectivity} />
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-surface-900 truncate">{d.field}</p>
+                            <p className="text-sm font-medium text-surface-900 truncate">{d.name}</p>
                             <p className="text-xs text-surface-400">
-                              {d.id} &middot; Battery {d.battery}%
+                              {d.id} &middot; Battery {d.battery.toFixed(0)}%
                             </p>
                           </div>
                         </div>

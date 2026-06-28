@@ -35,6 +35,15 @@ function severityText(val) {
   return "text-semantic-green";
 }
 
+/* ─── Crop images ──────────────────────────────────────────────── */
+const CROP_IMAGES = {
+  Rice:    "https://images.unsplash.com/photo-1536304993881-ff86e0c9b96f?auto=format&fit=crop&w=400&q=70",
+  Beans:   "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=400&q=70",
+  Yam:     "https://images.unsplash.com/photo-1623428187969-5da2dcea5ebf?auto=format&fit=crop&w=400&q=70",
+  Maize:   "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=400&q=70",
+  Cassava: "https://images.unsplash.com/photo-1597690989460-c5f1ab2c2b4b?auto=format&fit=crop&w=400&q=70",
+};
+
 /* ─── Risk bar ─────────────────────────────────────────────────── */
 function RiskBar({ label, value }) {
   return (
@@ -77,16 +86,27 @@ function FieldCard({ node, index }) {
       className="cursor-pointer"
       onClick={() => navigate(`/app/fields/${node.id}`)}
     >
-      <Card className="relative h-full hover:border-surface-300 hover:shadow-sm transition-shadow duration-150">
-        {/* Action needed */}
-        {hasAlert && (
-          <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider text-semantic-amber">
-            Action needed
-          </span>
-        )}
+      <Card className="relative h-full hover:border-surface-300 hover:shadow-sm transition-shadow duration-150 overflow-hidden" padding="none">
+        {/* Crop image thumbnail */}
+        <div className="relative h-24 overflow-hidden">
+          <img
+            src={CROP_IMAGES[node.crop] ?? "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=400&q=70"}
+            alt={node.crop}
+            className="w-full h-full object-cover"
+            style={{ filter: "saturate(0.65) brightness(0.92)" }}
+            loading="lazy"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface-50/90 to-transparent" />
+          {hasAlert && (
+            <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wider text-semantic-amber bg-white/80 px-1.5 py-0.5 rounded">
+              Action needed
+            </span>
+          )}
+        </div>
 
+        <div className="p-4">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-4 pr-24">
+        <div className="flex items-center gap-2 mb-4 pr-2">
           <StatusDot status={node.connectivity} />
           <span className="text-sm font-semibold text-surface-900 truncate">{node.name}</span>
           <span className="text-xs text-surface-400 shrink-0">{node.crop}</span>
@@ -119,6 +139,7 @@ function FieldCard({ node, index }) {
         <p className="text-[10px] text-surface-400 mt-3">
           {connLabel} &middot; {node.id}
         </p>
+        </div>
       </Card>
     </motion.div>
   );
@@ -127,6 +148,7 @@ function FieldCard({ node, index }) {
 /* ─── Overview ─────────────────────────────────────────────────── */
 export default function Overview() {
   const nodes = useSensorData();
+  const navigate = useNavigate();
 
   const totalFields   = nodes.length;
   const activeAlerts  = nodes.reduce((s, n) => s + n.alerts.length, 0);
@@ -137,6 +159,22 @@ export default function Overview() {
 
   return (
     <div className="max-w-6xl">
+      {/* Farm header image */}
+      <div className="relative rounded-2xl overflow-hidden h-36 mb-6">
+        <img
+          src="https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1400&q=80"
+          alt="Farm overview"
+          className="w-full h-full object-cover"
+          style={{ filter: "saturate(0.6) brightness(0.9)" }}
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-surface-900/70 to-transparent" />
+        <div className="absolute inset-0 flex flex-col justify-end p-5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">Farm Overview</p>
+          <h2 className="text-xl font-bold text-white">All Fields — SoilGuard</h2>
+        </div>
+      </div>
+
       {/* Summary stats */}
       <motion.div
         className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7"
@@ -180,7 +218,10 @@ export default function Overview() {
         >
           <p className="text-sm font-medium text-surface-500 mb-1">No fields yet</p>
           <p className="text-xs text-surface-400 mb-5">Set up a sensing node to start monitoring.</p>
-          <button className="px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors">
+          <button
+            onClick={() => navigate("/onboarding")}
+            className="px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors"
+          >
             Add your first field
           </button>
         </motion.div>
@@ -195,6 +236,7 @@ export default function Overview() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: nodes.length * 0.065 + 0.1 }}
+            onClick={() => navigate("/onboarding")}
             className="rounded-xl border-2 border-dashed border-surface-200 p-4 flex flex-col items-center justify-center text-surface-400 hover:text-surface-600 hover:border-surface-300 transition-colors min-h-50 gap-2"
           >
             <span className="text-2xl leading-none">+</span>

@@ -1,17 +1,18 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { clsx as cx } from "clsx";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Map, Bell, BarChart3,
-  Settings, ChevronDown, ChevronLeft, ChevronRight, X,
+  Settings, ChevronDown, ChevronLeft, ChevronRight, X, Brain,
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { to: "/app",          icon: LayoutDashboard, label: "Overview",           end: true },
-  { to: "/app/fields",   icon: Map,             label: "Fields" },
-  { to: "/app/alerts",   icon: Bell,            label: "Alerts" },
-  { to: "/app/history",  icon: BarChart3,       label: "History & Analytics" },
+  { to: "/app",               icon: LayoutDashboard, label: "Overview",           end: true },
+  { to: "/app/fields",        icon: Map,             label: "Fields" },
+  { to: "/app/ai-dashboard",  icon: Brain,           label: "AI Dashboard" },
+  { to: "/app/alerts",        icon: Bell,            label: "Alerts" },
+  { to: "/app/history",       icon: BarChart3,       label: "History & Analytics" },
 ];
 
 function NavLinks({ collapsed, onItemClick }) {
@@ -91,6 +92,7 @@ function AccountBar({ collapsed }) {
 
 export default function Sidebar({ mobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <>
@@ -117,9 +119,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
       >
         <div className="h-12 flex items-center px-4 border-b border-surface-200 shrink-0">
           {!collapsed && (
-            <span className="text-sm font-bold text-surface-900 tracking-tight select-none flex-1 whitespace-nowrap">
+            <button
+              onClick={() => navigate("/")}
+              className="text-sm font-bold text-surface-900 tracking-tight select-none flex-1 whitespace-nowrap text-left hover:text-accent transition-colors"
+            >
               SoilGuard
-            </span>
+            </button>
           )}
           <button
             onClick={() => setCollapsed((c) => !c)}
@@ -148,7 +153,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
       >
         <div className="h-12 flex items-center justify-between px-4 border-b border-surface-200 shrink-0">
-          <span className="text-sm font-bold text-surface-900 tracking-tight select-none">SoilGuard</span>
+          <button
+            onClick={() => { navigate("/"); onMobileClose(); }}
+            className="text-sm font-bold text-surface-900 tracking-tight select-none hover:text-accent transition-colors"
+          >
+            SoilGuard
+          </button>
           <button
             onClick={onMobileClose}
             className="w-7 h-7 flex items-center justify-center rounded-md text-surface-400 hover:text-surface-700 hover:bg-surface-100 transition-colors"

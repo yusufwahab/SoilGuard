@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
 } from "recharts";
-import { useSensorData } from "../data/SensorContext";
+import { useSensorData, usePumpControl } from "../data/SensorContext";
 import { getFieldById, dismissAlert, startActuation } from "../data/mockSensorData";
 import StatusDot from "../components/ui/StatusDot";
 import SeverityTag from "../components/ui/SeverityTag";
@@ -46,6 +46,14 @@ function qualLevel(val, type) {
   if (type === "temp")     return val > 40 || val < 15 ? "watch" : "normal";
   return "normal";
 }
+
+const CROP_IMAGES = {
+  Rice:    "https://images.unsplash.com/photo-1536304993881-ff86e0c9b96f?auto=format&fit=crop&w=1200&q=80",
+  Beans:   "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=1200&q=80",
+  Yam:     "https://images.unsplash.com/photo-1623428187969-5da2dcea5ebf?auto=format&fit=crop&w=1200&q=80",
+  Maize:   "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=1200&q=80",
+  Cassava: "https://images.unsplash.com/photo-1597690989460-c5f1ab2c2b4b?auto=format&fit=crop&w=1200&q=80",
+};
 
 /* ─── Actuation Modal ──────────────────────────────────────────── */
 function ActuationModal({ alert, fieldId, fieldName, onClose }) {
@@ -167,12 +175,73 @@ function ActuationModal({ alert, fieldId, fieldName, onClose }) {
   );
 }
 
+/* ─── Pump Control (real device only) ─────────────────────────── */
+function PumpControl() {
+  const { pumpState, pumpLoading, setPump } = usePumpControl();
+  const isOn = pumpState === "ON";
+  const unknown = pumpState === null;
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-2">
+            Pump Control — Live Hardware
+          </p>
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className={`w-2 h-2 rounded-full ${isOn ? "bg-semantic-green animate-ping-live" : "bg-surface-300"}`}
+            />
+            <span className="text-sm font-bold text-surface-900">
+              {unknown ? "Connecting…" : isOn ? "Pump running" : "Pump stopped"}
+            </span>
+            {pumpLoading && (
+              <span className="text-xs text-surface-400 ml-1">Sending command…</span>
+            )}
+          </div>
+          <p className="text-xs text-surface-500 leading-relaxed">
+            {isOn
+              ? "Pump is dispensing water. Monitor moisture levels."
+              : "Pump is idle. Activate to dispense water to the field."}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <motion.button
+            whileHover={{ scale: pumpLoading || isOn || unknown ? 1 : 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setPump("ON")}
+            disabled={pumpLoading || isOn || unknown}
+            className={`px-5 py-2 text-sm font-bold rounded-lg transition-colors ${
+              isOn
+                ? "bg-semantic-green/15 text-semantic-green border border-semantic-green/30 cursor-default"
+                : "bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            }`}
+          >
+            {isOn ? "● Running" : "Turn ON"}
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: pumpLoading || !isOn || unknown ? 1 : 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setPump("OFF")}
+            disabled={pumpLoading || !isOn || unknown}
+            className="px-5 py-2 text-sm font-bold rounded-lg border border-surface-200 text-surface-600 hover:bg-surface-100 hover:border-surface-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Turn OFF
+          </motion.button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /* ─── FieldDetail ──────────────────────────────────────────────── */
 export default function FieldDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  useSensorData();
-  const node = getFieldById(id);
+  const nodes = useSensorData();
+  // Works for both mock nodes and the real Firebase node (SG-RICE)
+  const node = nodes.find((n) => n.id === id) ?? null;
 
   const [timeRange, setTimeRange] = useState(1);
   const [chartLines, setChartLines] = useState({ moisture: true, pH: true, ec: true, temperature: false });
@@ -214,6 +283,28 @@ export default function FieldDetail() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
+      {/* ── Crop banner image ── */}
+      <div className="relative rounded-2xl overflow-hidden h-36">
+        <img
+          src={CROP_IMAGES[node.crop] ?? "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1200&q=80"}
+          alt={node.crop}
+          className="w-full h-full object-cover"
+          style={{ filter: "saturate(0.65) brightness(0.88)" }}
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-surface-900/75 to-transparent" />
+        <div className="absolute inset-0 flex flex-col justify-end p-5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">{node.crop} · {node.id}</p>
+          <h2 className="text-2xl font-bold text-white leading-none">{node.name}</h2>
+        </div>
+        {node.connectivity === "live" && (
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/30 backdrop-blur-sm rounded-full px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping-live" />
+            <span className="text-[10px] text-white font-semibold">Live</span>
+          </div>
+        )}
+      </div>
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -248,13 +339,21 @@ export default function FieldDetail() {
         <span className="sm:ml-auto text-surface-400 font-mono text-[11px]">{node.id}</span>
       </div>
 
+      {/* ── Pump control (real device only) ── */}
+      {node.isRealDevice && <PumpControl />}
+
       {/* ── Live readings row ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className={`grid gap-3 ${
+        node.isRealDevice
+          ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-5"
+          : "grid-cols-2 md:grid-cols-4"
+      }`}>
         {[
-          { label: "Soil Moisture", val: node.moisture, unit: "%",    key: "moisture", color: "#0284c7", type: "moisture", dec: 1 },
-          { label: "Soil pH",       val: node.pH,        unit: "",     key: "pH",       color: "#16a34a", type: "pH",       dec: 1 },
-          { label: "EC",            val: node.ec,        unit: " dS/m",key: "ec",       color: "#d97706", type: "ec",       dec: 2 },
-          { label: "Temperature",   val: node.temperature,unit: "°C",  key: "temperature",color:"#dc2626",type: "temp",     dec: 1 },
+          { label: "Soil Moisture", val: node.moisture,    unit: "%",     key: "moisture",    color: "#0284c7", type: "moisture", dec: 1 },
+          { label: "Soil pH",       val: node.pH,          unit: "",      key: "pH",          color: "#16a34a", type: "pH",       dec: 1 },
+          { label: "EC",            val: node.ec,          unit: " dS/m", key: "ec",          color: "#d97706", type: "ec",       dec: 2 },
+          { label: "Temperature",   val: node.temperature, unit: "°C",    key: "temperature", color: "#dc2626", type: "temp",     dec: 1 },
+          ...(node.isRealDevice ? [{ label: "Humidity", val: node.humidity ?? 0, unit: "%", key: "humidity", color: "#7c3aed", type: "humidity", dec: 1 }] : []),
         ].map(({ label, val, unit, key, color, type, dec }) => (
           <Card key={key} className="overflow-hidden">
             <div className="flex items-start justify-between mb-1">
@@ -408,7 +507,7 @@ export default function FieldDetail() {
             ))}
           </div>
           <div className="flex items-center gap-4">
-            {activeAlert.actionable && (
+            {activeAlert.actionable && !node.isRealDevice && (
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -418,9 +517,17 @@ export default function FieldDetail() {
                 {activeAlert.actionLabel}
               </motion.button>
             )}
-            <button className="text-sm text-surface-400 hover:text-surface-700 transition-colors" onClick={() => dismissAlert(node.id, activeAlert.id)}>
-              Dismiss
-            </button>
+            {node.isRealDevice && (
+              <p className="text-xs text-surface-400">Use the pump control above to actuate.</p>
+            )}
+            {!node.isRealDevice && (
+              <button
+                className="text-sm text-surface-400 hover:text-surface-700 transition-colors"
+                onClick={() => dismissAlert(node.id, activeAlert.id)}
+              >
+                Dismiss
+              </button>
+            )}
           </div>
         </motion.div>
       ) : (
@@ -430,17 +537,19 @@ export default function FieldDetail() {
         </div>
       )}
 
-      {/* ── Actuation modal ── */}
-      <AnimatePresence>
-        {actuationAlert && (
-          <ActuationModal
-            alert={actuationAlert}
-            fieldId={node.id}
-            fieldName={node.name}
-            onClose={() => setActuationAlert(null)}
-          />
-        )}
-      </AnimatePresence>
+      {/* ── Actuation modal (mock nodes only) ── */}
+      {!node.isRealDevice && (
+        <AnimatePresence>
+          {actuationAlert && (
+            <ActuationModal
+              alert={actuationAlert}
+              fieldId={node.id}
+              fieldName={node.name}
+              onClose={() => setActuationAlert(null)}
+            />
+          )}
+        </AnimatePresence>
+      )}
     </motion.div>
   );
 }

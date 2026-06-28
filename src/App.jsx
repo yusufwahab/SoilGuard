@@ -8,6 +8,7 @@ import FieldDetail from "./pages/FieldDetail";
 import Alerts from "./pages/Alerts";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
+import AIDashboard from "./pages/AIDashboard";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="alerts" element={<Alerts />} />
           <Route path="history" element={<History />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="ai-dashboard" element={<AIDashboard />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
