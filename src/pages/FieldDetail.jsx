@@ -48,11 +48,11 @@ function qualLevel(val, type) {
 }
 
 const CROP_IMAGES = {
-  Rice:    "https://images.unsplash.com/photo-1536304993881-ff86e0c9b96f?auto=format&fit=crop&w=1200&q=80",
+  Rice:    "/Rice.jpg",
   Beans:   "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=1200&q=80",
-  Yam:     "https://images.unsplash.com/photo-1623428187969-5da2dcea5ebf?auto=format&fit=crop&w=1200&q=80",
+  Yam:     "https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=1200&q=80",
   Maize:   "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=1200&q=80",
-  Cassava: "https://images.unsplash.com/photo-1597690989460-c5f1ab2c2b4b?auto=format&fit=crop&w=1200&q=80",
+  Cassava: "https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=80",
 };
 
 /* ─── Actuation Modal ──────────────────────────────────────────── */

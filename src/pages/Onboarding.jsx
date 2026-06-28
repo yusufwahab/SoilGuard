@@ -66,7 +66,11 @@ export default function Onboarding() {
                       : "text-surface-300 border border-surface-200"
                   }`}
                 >
-                  {s.id < step ? "✓" : s.id}
+                  {s.id < step ? (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : s.id}
                 </span>
                 {/* Labels hidden on small screens */}
                 <span
@@ -209,7 +213,9 @@ export default function Onboarding() {
               {pairingPhase === "paired" && (
                 <div className="py-6 text-center">
                   <div className="w-10 h-10 bg-semantic-green/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-semantic-green text-lg">✓</span>
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                      <path d="M3 9l4.5 4.5 7.5-7.5" stroke="#22c55e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </div>
                   <p className="text-sm font-semibold text-semantic-green">Node SG-0231 paired</p>
                   <p className="text-xs text-surface-400 mt-1">Ready to start monitoring</p>
