@@ -1,18 +1,17 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { startStreaming, stopStreaming, getSnapshot, subscribe } from "./mockSensorData";
 import {
-  fetchSensor, fetchPumpState, writePumpState,
-  fetchTargetMoisture, fetchAIDashboard,
+  onValue, off,
+  sensorRef, pumpStateRef, targetMoistRef, aiDashboardRef,
+  writePumpState,
 } from "./firebaseService";
 
 const SensorContext = createContext(null);
 
-const POLL_MS = 3000;
-
 const CROP_CONFIGS = [
-  { key: "rice",  id: "SG-RICE",  name: "Rice Paddy",   crop: "Rice"  },
-  { key: "beans", id: "SG-BEANS", name: "Beans Field",  crop: "Beans" },
-  { key: "yam",   id: "SG-YAM",  name: "Yam Plot",     crop: "Yam"   },
+  { key: "rice",  id: "SG-RICE",  name: "Rice Paddy",  crop: "Rice"  },
+  { key: "beans", id: "SG-BEANS", name: "Beans Field", crop: "Beans" },
+  { key: "yam",   id: "SG-YAM",  name: "Yam Plot",    crop: "Yam"   },
 ];
 
 function buildNode(cfg, sensor, history) {
@@ -21,11 +20,11 @@ function buildNode(cfg, sensor, history) {
     name:          cfg.name,
     crop:          cfg.crop,
     lat: 0, lng: 0,
-    moisture:      sensor.moisture,
-    pH:            sensor.pH,
-    ec:            sensor.EC,
-    temperature:   sensor.temperature,
-    humidity:      sensor.humidity,
+    moisture:      sensor.moisture ?? 0,
+    pH:            sensor.pH ?? 7,
+    ec:            sensor.EC ?? 0,
+    temperature:   sensor.temperature ?? 0,
+    humidity:      sensor.humidity ?? 0,
     battery:       100,
     solarCharging: true,
     connectivity:  "live",
@@ -34,7 +33,7 @@ function buildNode(cfg, sensor, history) {
     history,
     actuationState: null,
     isRealDevice:  true,
-    pumpStatus:    sensor.pumpStatus,
+    pumpStatus:    sensor.pumpStatus ?? 0,
   };
 }
 
@@ -42,7 +41,7 @@ function buildOfflineNode(cfg, history) {
   return {
     id: cfg.id, name: cfg.name, crop: cfg.crop,
     lat: 0, lng: 0,
-    moisture: 0, pH: 7, ec: 0, temperature: 25, humidity: 50,
+    moisture: 0, pH: 7, ec: 0, temperature: 0, humidity: 0,
     battery: 0, solarCharging: false,
     connectivity: "offline",
     lastSeen: Date.now() - 60_000,
@@ -59,104 +58,102 @@ export function SensorProvider({ children }) {
     return getSnapshot();
   });
 
-  // keyed by crop key: { rice: node, beans: node, yam: node }
-  const [realNodes,      setRealNodes]      = useState({});
-  // keyed by crop key: { rice: "ON"|"OFF"|null, ... }
-  const [pumpStates,     setPumpStates]     = useState({ rice: null, beans: null, yam: null });
-  // keyed by crop key: { rice: false, ... }
-  const [pumpLoadings,   setPumpLoadings]   = useState({ rice: false, beans: false, yam: false });
-  // keyed by crop key: { rice: 60, beans: 55, yam: 45 }
+  const [realNodes,       setRealNodes]       = useState({});
+  const [pumpStates,      setPumpStates]      = useState({ rice: null, beans: null, yam: null });
+  const [pumpLoadings,    setPumpLoadings]    = useState({ rice: false, beans: false, yam: false });
   const [targetMoistures, setTargetMoistures] = useState({ rice: null, beans: null, yam: null });
-  const [aiDashboard,    setAiDashboard]    = useState({});
+  const [aiDashboard,     setAiDashboard]     = useState({});
 
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
 
-  // ── Mock data subscription ──────────────────────────────────────
+  // ── Mock data ───────────────────────────────────────────────────
   useEffect(() => {
     const unsub = subscribe((snap) => setMockNodes([...snap]));
     return () => { unsub(); stopStreaming(); };
   }, []);
 
-  // ── Firebase polling — all three crops ─────────────────────────
+  // ── Firebase real-time listeners ────────────────────────────────
   useEffect(() => {
-    let active = true;
+    const unsubscribers = [];
 
-    async function poll() {
-      await Promise.allSettled(
-        CROP_CONFIGS.map(async (cfg) => {
-          try {
-            const [sensor, pump, target, ai] = await Promise.allSettled([
-              fetchSensor(cfg.key),
-              fetchPumpState(cfg.key),
-              fetchTargetMoisture(cfg.key),
-              fetchAIDashboard(cfg.key),
-            ]);
+    CROP_CONFIGS.forEach((cfg) => {
+      // Sensor listener
+      const sRef = sensorRef(cfg.key);
+      const sensorUnsub = onValue(sRef, (snapshot) => {
+        const s = snapshot.val();
+        if (!s) {
+          setRealNodes((prev) => ({
+            ...prev,
+            [cfg.key]: prev[cfg.key]
+              ? { ...prev[cfg.key], connectivity: "offline" }
+              : buildOfflineNode(cfg, historyRefs.current[cfg.key]),
+          }));
+          return;
+        }
+        historyRefs.current[cfg.key] = [
+          ...historyRefs.current[cfg.key],
+          { t: Date.now(), moisture: s.moisture, pH: s.pH, ec: s.EC, temperature: s.temperature },
+        ].slice(-200);
 
-            if (!active) return;
+        setRealNodes((prev) => ({
+          ...prev,
+          [cfg.key]: buildNode(cfg, s, historyRefs.current[cfg.key]),
+        }));
 
-            if (sensor.status === "fulfilled" && sensor.value) {
-              const s = sensor.value;
+        // Sync pump state from telemetry only if no command pending
+        setPumpStates((prev) => {
+          if (pumpLoadingRefs.current[cfg.key]) return prev;
+          if (prev[cfg.key] !== null) return prev; // already set by pump_state listener
+          return { ...prev, [cfg.key]: s.pumpStatus === 1 ? "ON" : "OFF" };
+        });
+      }, (err) => {
+        console.error(`[Firebase] ${cfg.key}/sensor error:`, err.message);
+        setRealNodes((prev) => ({
+          ...prev,
+          [cfg.key]: buildOfflineNode(cfg, historyRefs.current[cfg.key]),
+        }));
+      });
+      unsubscribers.push(() => off(sRef, "value", sensorUnsub));
 
-              // accumulate history
-              historyRefs.current[cfg.key] = [
-                ...historyRefs.current[cfg.key],
-                { t: Date.now(), moisture: s.moisture, pH: s.pH, ec: s.EC, temperature: s.temperature },
-              ].slice(-200);
+      // Pump state listener
+      const pRef = pumpStateRef(cfg.key);
+      const pumpUnsub = onValue(pRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val !== null && !pumpLoadingRefs.current[cfg.key]) {
+          setPumpStates((prev) => ({ ...prev, [cfg.key]: val }));
+        }
+      });
+      unsubscribers.push(() => off(pRef, "value", pumpUnsub));
 
-              setRealNodes((prev) => ({
-                ...prev,
-                [cfg.key]: buildNode(cfg, s, historyRefs.current[cfg.key]),
-              }));
+      // Target moisture listener
+      const tRef = targetMoistRef(cfg.key);
+      const targetUnsub = onValue(tRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val !== null) {
+          setTargetMoistures((prev) => ({ ...prev, [cfg.key]: val }));
+        }
+      });
+      unsubscribers.push(() => off(tRef, "value", targetUnsub));
 
-              // sync pump state from firebase, fall back to telemetry
-              setPumpStates((prev) => {
-                if (pumpLoadingRefs.current[cfg.key]) return prev;
-                const telemetry = s.pumpStatus === 1 ? "ON" : "OFF";
-                const firebaseVal = pump.status === "fulfilled" ? pump.value : null;
-                return { ...prev, [cfg.key]: firebaseVal ?? telemetry };
-              });
-            } else {
-              setRealNodes((prev) => ({
-                ...prev,
-                [cfg.key]: prev[cfg.key]
-                  ? { ...prev[cfg.key], connectivity: "offline" }
-                  : buildOfflineNode(cfg, historyRefs.current[cfg.key]),
-              }));
-            }
+      // AI Dashboard listener
+      const aRef = aiDashboardRef(cfg.key);
+      const aiUnsub = onValue(aRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val !== null) {
+          setAiDashboard((prev) => ({ ...prev, [cfg.key]: val }));
+        }
+      });
+      unsubscribers.push(() => off(aRef, "value", aiUnsub));
+    });
 
-            if (target.status === "fulfilled" && target.value !== null) {
-              setTargetMoistures((prev) => ({ ...prev, [cfg.key]: target.value }));
-            }
-
-            if (ai.status === "fulfilled" && ai.value !== null) {
-              setAiDashboard((prev) => ({ ...prev, [cfg.key]: ai.value }));
-            }
-
-            console.log(
-              `%c[SensorContext] ${cfg.key} poll`,
-              "color:#d97706;font-weight:bold",
-              new Date().toLocaleTimeString(),
-              {
-                sensor: sensor.status === "fulfilled" ? sensor.value : "failed",
-                pump:   pump.status === "fulfilled"   ? pump.value   : "failed",
-                target: target.status === "fulfilled" ? target.value : "failed",
-              }
-            );
-          } catch (err) {
-            console.error(`%c[SensorContext] ${cfg.key} poll error`, "color:#dc2626;font-weight:bold", err.message);
-          }
-        })
-      );
-    }
-
-    poll();
-    const iv = setInterval(poll, POLL_MS);
-    return () => { active = false; clearInterval(iv); };
+    return () => unsubscribers.forEach((fn) => fn());
   }, []);
 
-  // ── Per-crop pump control ────────────────────────────────────────
+  // ── Per-crop pump write (optimised — no redundant writes) ───────
   async function handleSetPump(cropKey, state) {
+    const current = pumpStates[cropKey];
+    if (current === state) return; // no-op if already in desired state
     pumpLoadingRefs.current[cropKey] = true;
     setPumpLoadings((prev) => ({ ...prev, [cropKey]: true }));
     try {
@@ -169,22 +166,21 @@ export function SensorProvider({ children }) {
   }
 
   // ── Context value ────────────────────────────────────────────────
-  const allRealNodes = CROP_CONFIGS
-    .map((cfg) => realNodes[cfg.key])
-    .filter(Boolean);
+  const allRealNodes = CROP_CONFIGS.map((cfg) => realNodes[cfg.key]).filter(Boolean);
 
   const value = {
-    nodes:          [...mockNodes, ...allRealNodes],
-    // legacy single-crop pump (rice) — keeps FieldDetail working
-    pumpState:      pumpStates.rice,
-    pumpLoading:    pumpLoadings.rice,
-    setPump:        (state) => handleSetPump("rice", state),
-    // full per-crop controls
+    nodes:           [...mockNodes, ...allRealNodes],
+    // legacy rice-only (keeps FieldDetail working)
+    pumpState:       pumpStates.rice,
+    pumpLoading:     pumpLoadings.rice,
+    setPump:         (state) => handleSetPump("rice", state),
+    // per-crop
     pumpStates,
     pumpLoadings,
-    setPumpForCrop: handleSetPump,
+    setPumpForCrop:  handleSetPump,
     targetMoistures,
     aiDashboard,
+    realNodes,
   };
 
   return <SensorContext.Provider value={value}>{children}</SensorContext.Provider>;
@@ -202,15 +198,15 @@ export function usePumpControl() {
   return { pumpState: ctx.pumpState, pumpLoading: ctx.pumpLoading, setPump: ctx.setPump };
 }
 
-// Per-crop pump + target moisture — used by AIDashboard
 export function useCropControls() {
   const ctx = useContext(SensorContext);
   if (!ctx) throw new Error("useCropControls must be used within SensorProvider");
   return {
-    pumpStates:     ctx.pumpStates,
-    pumpLoadings:   ctx.pumpLoadings,
-    setPumpForCrop: ctx.setPumpForCrop,
+    pumpStates:      ctx.pumpStates,
+    pumpLoadings:    ctx.pumpLoadings,
+    setPumpForCrop:  ctx.setPumpForCrop,
     targetMoistures: ctx.targetMoistures,
+    realNodes:       ctx.realNodes,
   };
 }
 

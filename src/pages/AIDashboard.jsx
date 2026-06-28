@@ -1,486 +1,458 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, ShieldAlert, Droplets, Thermometer, Wind, FlaskConical } from "lucide-react";
-import { useAIDashboard, useCropControls, useSensorData } from "../data/SensorContext";
+import { Brain, ShieldAlert, Droplets, Thermometer, Wind, FlaskConical, AlertTriangle, Zap } from "lucide-react";
+import { useCropControls, useAIDashboard, useSensorData } from "../data/SensorContext";
 import { writeTargetMoisture } from "../data/firebaseService";
-import Card from "../components/ui/Card";
 
 /* ─── Crop config ───────────────────────────────────────────────── */
 const CROP_META = {
-  rice:  { label: "Rice",  color: "#16a34a", bg: "from-green-900/80",  image: "/Rice.jpg", icon: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=48&h=48&q=80", id: "SG-RICE"  },
-  beans: { label: "Beans", color: "#d97706", bg: "from-amber-900/80",  image: "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=1200&q=80", icon: "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=48&h=48&q=80", id: "SG-BEANS" },
-  yam:   { label: "Yam",   color: "#7c3aed", bg: "from-purple-900/80", image: "https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=1200&q=80", icon: "https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=48&h=48&q=80", id: "SG-YAM"   },
+  beans: { label: "Beans", color: "#d97706", image: "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=48&h=48&q=80", id: "SG-BEANS", defaultTarget: 60 },
+  rice:  { label: "Rice",  color: "#16a34a", image: "/Rice.jpg",  id: "SG-RICE",  defaultTarget: 70 },
+  yam:   { label: "Yam",   color: "#7c3aed", image: "https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=48&h=48&q=80", id: "SG-YAM",   defaultTarget: 65 },
 };
 
-/* ─── Mock AI fallback data ─────────────────────────────────────── */
-const MOCK_AI = {
-  rice: {
-    farmer_message: "Moisture levels are stable. No irrigation required at this time. Monitor EC levels over the next 24 hours.",
-    recommended_target: 65,
-    fungi_risk_score: 3,
-    fungi_advice: "Low risk. Canopy ventilation is adequate.",
-    material_health_status: "OK: Soil chemistry within safe corrosion thresholds. Sensor probes are healthy.",
-    decision: "MONITOR",
-    corrosion_risk_score: 2,
-    sensor_health_pct: 96,
-  },
-  beans: {
-    farmer_message: "Moisture is critically low (18%), but irrigation is currently postponed due to detected light rain. We are utilizing natural precipitation to conserve water. If moisture levels do not improve after the rain subsides, a manual override or scheduled irrigation may be required.",
-    recommended_target: 35,
-    fungi_risk_score: 4,
-    fungi_advice: "Moderate risk. Humidity above 75% detected. Apply preventative fungicide.",
-    material_health_status: "Warning: EC reading at 2.8 dS/m — elevated salinity stress on metallic sensor probes. Schedule probe cleaning within 2 weeks.",
-    decision: "POSTPONE",
-    corrosion_risk_score: 3,
-    sensor_health_pct: 92,
-  },
-  yam: {
-    farmer_message: "pH is optimal at 6.2. Tuber development stage detected — reduce irrigation frequency to every 3 days to prevent waterlogging and tuber rot.",
-    recommended_target: 45,
-    fungi_risk_score: 2,
-    fungi_advice: "Low risk. Conditions are dry and well-ventilated. No action required.",
-    material_health_status: "OK: Soil chemistry is within safe corrosion thresholds. LSI index is neutral. Sensor probes are healthy.",
-    decision: "IRRIGATE",
-    corrosion_risk_score: 1,
-    sensor_health_pct: 98,
-  },
+const CROPS = ["beans", "rice", "yam"];
+
+/* ─── Dark theme tokens ─────────────────────────────────────────── */
+const D = {
+  bg:        "#0f1117",
+  card:      "#1a1d27",
+  border:    "#2a2d3a",
+  borderHi:  "#3a3d4a",
+  text:      "#e2e8f0",
+  textMuted: "#64748b",
+  textDim:   "#94a3b8",
 };
 
 /* ─── Helpers ───────────────────────────────────────────────────── */
-function riskColor(score, max = 10) {
-  const pct = score / max;
-  if (pct >= 0.7) return "#ef4444";
-  if (pct >= 0.4) return "#f59e0b";
+function riskColor(score) {
+  if (score >= 7) return "#ef4444";
+  if (score >= 4) return "#f59e0b";
   return "#22c55e";
 }
 
-function RiskScore({ label, score, max = 10 }) {
-  const color = riskColor(score, max);
-  const pct = (score / max) * 100;
+function DarkProgressBar({ value, max = 100, color }) {
+  const pct = Math.min(100, (value / max) * 100);
   return (
-    <div>
-      <div className="flex justify-between items-center mb-1.5">
-        <span className="text-xs text-surface-500">{label}</span>
-        <span className="font-mono text-sm font-bold tabular-nums" style={{ color }}>
-          {score}/{max}
-        </span>
-      </div>
-      <div className="h-2 w-full bg-surface-200 rounded-full overflow-hidden">
-        <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: color }}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        />
-      </div>
+    <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: "#2a2d3a" }}>
+      <motion.div
+        className="h-full rounded-full"
+        style={{ backgroundColor: color }}
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      />
     </div>
   );
 }
 
-const DECISION_STYLES = {
-  IRRIGATE: { bg: "#dcfce7", color: "#16a34a", border: "#22c55e40" },
-  POSTPONE: { bg: "#fef9c3", color: "#d97706", border: "#f59e0b40" },
-  MONITOR:  { bg: "#eff6ff", color: "#0284c7", border: "#0284c740" },
-  ALERT:    { bg: "#fee2e2", color: "#ef4444", border: "#ef444440" },
-};
+function DarkCard({ children, className = "", style = {} }) {
+  return (
+    <div
+      className={`rounded-xl p-4 ${className}`}
+      style={{ background: D.card, border: `1px solid ${D.border}`, ...style }}
+    >
+      {children}
+    </div>
+  );
+}
 
-/* ─── Live Sensor Strip ──────────────────────────────────────────── */
-function LiveSensorStrip({ node, cropColor }) {
-  if (!node) {
-    return (
-      <Card>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-3">Live Sensor Readings</p>
-        <p className="text-xs text-surface-400 py-4 text-center">Connecting to device…</p>
-      </Card>
-    );
-  }
+function SectionLabel({ children }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: D.textMuted }}>
+      {children}
+    </p>
+  );
+}
+
+/* ─── Card 1: Live Environmental Data ───────────────────────────── */
+function LiveEnvCard({ sensor, cropColor }) {
+  const pH = sensor?.pH;
+  const pHVal = typeof pH === "number" ? pH.toFixed(2) : (pH ?? "—");
+
+  const isFault =
+    sensor &&
+    (sensor.moisture ?? 0) === 0 &&
+    (sensor.temperature ?? 0) === 0 &&
+    (sensor.humidity ?? 0) === 0;
 
   const readings = [
-    { label: "Moisture", value: node.moisture?.toFixed(0), unit: "%",  icon: <Droplets size={13} />, color: "#0284c7" },
-    { label: "Temp",     value: node.temperature?.toFixed(1), unit: "°C", icon: <Thermometer size={13} />, color: "#dc2626" },
-    { label: "Humidity", value: node.humidity?.toFixed(0), unit: "%",  icon: <Wind size={13} />,     color: "#7c3aed" },
-    { label: "pH",       value: node.pH?.toFixed(1), unit: "",         icon: <FlaskConical size={13} />, color: cropColor },
+    { label: "Moisture",    value: sensor?.moisture?.toFixed(0) ?? "—", unit: "%",  icon: <Droplets size={14} />,    color: "#0284c7" },
+    { label: "Temperature", value: sensor?.temperature?.toFixed(1) ?? "—", unit: "°C", icon: <Thermometer size={14} />, color: "#dc2626" },
+    { label: "Humidity",    value: sensor?.humidity?.toFixed(0) ?? "—",    unit: "%",  icon: <Wind size={14} />,        color: "#7c3aed" },
+    { label: "pH",          value: pHVal,                                  unit: "",   icon: <FlaskConical size={14} />, color: cropColor },
   ];
 
-  const isLive = node.connectivity === "live";
-
   return (
-    <Card>
+    <DarkCard
+      style={{
+        background: D.card,
+        border: `1px solid ${isFault ? "#ef4444" : D.border}`,
+        boxShadow: isFault ? "0 0 0 1px #ef444440" : "none",
+      }}
+    >
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">Live Sensor Readings</p>
-        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isLive ? "bg-semantic-green/10 text-semantic-green" : "bg-surface-200 text-surface-400"}`}>
-          {isLive ? "● Live" : "○ Offline"}
-        </span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {readings.map(({ label, value, unit, icon, color }) => (
-          <div key={label} className="flex flex-col items-center text-center p-2.5 rounded-xl bg-surface-100/60 border border-surface-200">
-            <span style={{ color }} className="mb-1">{icon}</span>
-            <span className="font-mono text-lg font-bold tabular-nums leading-none text-surface-900">
-              {value ?? "—"}<span className="text-xs font-normal text-surface-400">{unit}</span>
-            </span>
-            <span className="text-[10px] text-surface-400 mt-0.5">{label}</span>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-/* ─── Materials Engineering Card ────────────────────────────────── */
-function MaterialsCard({ data }) {
-  const mhStatus = data?.material_health_status ?? "";
-  const isOK      = mhStatus.toLowerCase().startsWith("ok");
-  const isWarning = mhStatus.toLowerCase().startsWith("warning");
-  const borderColor = isOK ? "#22c55e" : isWarning ? "#f59e0b" : "#ef4444";
-  const badgeStyle  = isOK
-    ? { bg: "#dcfce7", color: "#16a34a" }
-    : isWarning
-    ? { bg: "#fef9c3", color: "#d97706" }
-    : { bg: "#fee2e2", color: "#ef4444" };
-
-  return (
-    <Card className="overflow-hidden">
-      {/* Header banner */}
-      <div
-        className="flex items-center gap-2 -mx-4 -mt-4 px-4 py-2.5 mb-4"
-        style={{ borderBottom: `2px solid ${borderColor}`, background: `${borderColor}10` }}
-      >
-        <ShieldAlert size={14} style={{ color: borderColor }} />
-        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: borderColor }}>
-          Materials Engineering
-        </p>
-        <span
-          className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full"
-          style={{ background: badgeStyle.bg, color: badgeStyle.color }}
-        >
-          {isOK ? "SAFE" : isWarning ? "WARNING" : "CRITICAL"}
-        </span>
+        <SectionLabel>Live Environmental Data</SectionLabel>
+        {!sensor ? (
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#27272a", color: D.textMuted }}>
+            Connecting…
+          </span>
+        ) : (
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+            style={{ background: "#16a34a20", color: "#22c55e" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-ping-live" />
+            Live
+          </span>
+        )}
       </div>
 
-      {/* Probe image */}
-      <div className="rounded-xl overflow-hidden h-28 relative mb-4">
-        <img
-          src="https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800&q=80"
-          alt="Sensor probe"
-          className="w-full h-full object-cover"
-          style={{ filter: "saturate(0.55) brightness(0.85)" }}
-          loading="lazy"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-900/60 to-transparent" />
-        <p className="absolute bottom-2 left-3 text-[10px] text-white/80 font-medium">Galvanic corrosion risk — buried metallic probes</p>
-      </div>
-
-      {/* Risk scores */}
-      <div className="space-y-3 mb-4">
-        <RiskScore label="Corrosion Risk (1-10)" score={data?.corrosion_risk_score ?? 0} />
-        <RiskScore label="Fungi / Disease Risk (1-10)" score={data?.fungi_risk_score ?? 0} />
-        <div>
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-xs text-surface-500">Sensor Health Lifecycle</span>
-            <span className="font-mono text-sm font-bold tabular-nums text-semantic-green">
-              {data?.sensor_health_pct ?? "—"}%
-            </span>
-          </div>
-          <div className="h-2 w-full bg-surface-200 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full rounded-full bg-semantic-green"
-              initial={{ width: 0 }}
-              animate={{ width: `${data?.sensor_health_pct ?? 0}%` }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Status message */}
-      <div
-        className="rounded-xl p-3 border text-xs text-surface-700 leading-relaxed"
-        style={{ borderColor: `${borderColor}40`, background: `${borderColor}08` }}
-      >
-        {mhStatus || "Awaiting materials health analysis…"}
-      </div>
-
-      <p className="text-[10px] text-surface-400 mt-3 pt-3 border-t border-surface-100 leading-relaxed">
-        <span className="font-semibold text-surface-500">MME Dept. relevance:</span> Real-time galvanic corrosion prediction on buried metallic infrastructure driven by live EC, pH &amp; moisture.
-      </p>
-    </Card>
-  );
-}
-
-/* ─── AI Intelligence Card ──────────────────────────────────────── */
-function AIIntelligenceCard({ data, cropColor }) {
-  const decision = data?.decision ?? "MONITOR";
-  const style = DECISION_STYLES[decision] ?? DECISION_STYLES.MONITOR;
-
-  return (
-    <Card>
-      <div className="flex items-center gap-2 mb-4">
-        <Brain size={15} style={{ color: cropColor }} />
-        <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">AI Intelligence</p>
-        {!data && <span className="ml-auto text-[9px] text-surface-400 animate-pulse">Waiting for n8n report…</span>}
-      </div>
-
-      {/* Decision badge */}
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-xs text-surface-500 font-medium">Decision:</span>
-        <span
-          className="text-sm font-bold px-3 py-1 rounded-lg tracking-wide"
-          style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
-        >
-          {decision}
-        </span>
-      </div>
-
-      {/* Recommended target */}
-      {data?.recommended_target != null && (
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-xs text-surface-500 font-medium">AI Recommended:</span>
-          <div className="flex items-center gap-1.5">
-            <Droplets size={13} style={{ color: cropColor }} />
-            <span className="font-mono text-base font-bold tabular-nums" style={{ color: cropColor }}>
-              {data.recommended_target}%
-            </span>
-          </div>
+      {isFault && (
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3" style={{ background: "#ef444415", border: "1px solid #ef444440" }}>
+          <AlertTriangle size={13} color="#ef4444" />
+          <span className="text-xs font-bold tracking-wide" style={{ color: "#ef4444" }}>
+            HARDWARE FAULT: CHECK PROBE
+          </span>
         </div>
       )}
 
-      {/* Message */}
-      <div
-        className="rounded-xl p-4 border text-sm text-surface-700 leading-relaxed"
-        style={{ borderLeft: `3px solid ${cropColor}`, background: "linear-gradient(135deg, #faf8f5, #f5f2ed)" }}
-      >
-        {data?.farmer_message ?? "No AI report received yet. n8n will push the next analysis in 30–60 minutes."}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {readings.map(({ label, value, unit, icon, color }) => (
+          <div key={label} className="flex flex-col items-center text-center p-3 rounded-lg"
+            style={{ background: "#13151f", border: `1px solid ${D.border}` }}>
+            <span style={{ color }} className="mb-1.5">{icon}</span>
+            <span className="font-mono text-xl font-bold tabular-nums leading-none" style={{ color: D.text }}>
+              {value}<span className="text-xs font-normal ml-0.5" style={{ color: D.textMuted }}>{unit}</span>
+            </span>
+            <span className="text-[10px] mt-1" style={{ color: D.textMuted }}>{label}</span>
+          </div>
+        ))}
       </div>
-    </Card>
+    </DarkCard>
   );
 }
 
-/* ─── Irrigation Control Card ───────────────────────────────────── */
-function IrrigationControl({ cropKey, cropColor, targetMoisture }) {
-  const { pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
-  const state   = pumpStates[cropKey];
-  const loading = pumpLoadings[cropKey];
-  const isOn    = state === "ON";
-  const unknown = state === null;
+/* ─── Card 2: Materials & AI Intelligence ───────────────────────── */
+function MaterialsAICard({ aiData, cropColor }) {
+  const decision = aiData?.decision ?? null;
+  const decisionStyle =
+    decision === "IRRIGATE" ? { bg: "#16a34a20", color: "#22c55e", border: "#22c55e40" } :
+    decision === "POSTPONE" ? { bg: "#d9770620", color: "#f59e0b", border: "#f59e0b40" } :
+    { bg: "#27272a", color: D.textDim, border: D.border };
 
-  const [manualTarget, setManualTarget] = useState(
-    targetMoisture != null ? Math.round(targetMoisture) : 35
+  const corrosion    = aiData?.corrosion_risk_score  ?? null;
+  const fungi        = aiData?.fungi_risk_score       ?? null;
+  const sensorHealth = aiData?.sensor_life_cycle_percent ?? null;
+
+  return (
+    <DarkCard>
+      <div className="flex items-center gap-2 mb-4">
+        <ShieldAlert size={14} style={{ color: cropColor }} />
+        <SectionLabel>Materials &amp; AI Intelligence</SectionLabel>
+        {!aiData && (
+          <span className="ml-auto text-[9px] animate-pulse" style={{ color: D.textMuted }}>
+            Awaiting n8n report…
+          </span>
+        )}
+      </div>
+
+      {/* AI Decision */}
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-xs font-medium" style={{ color: D.textMuted }}>AI Decision:</span>
+        {decision ? (
+          <span className="text-sm font-bold px-3 py-1 rounded-lg tracking-widest"
+            style={{ background: decisionStyle.bg, color: decisionStyle.color, border: `1px solid ${decisionStyle.border}` }}>
+            {decision}
+          </span>
+        ) : (
+          <span className="text-xs" style={{ color: D.textMuted }}>—</span>
+        )}
+      </div>
+
+      {/* Farmer message */}
+      {aiData?.farmer_message && (
+        <div className="rounded-lg p-3 mb-4 text-sm leading-relaxed"
+          style={{ background: "#13151f", border: `1px solid ${cropColor}40`, borderLeft: `3px solid ${cropColor}`, color: D.textDim }}>
+          {aiData.farmer_message}
+        </div>
+      )}
+
+      {/* Progress bars */}
+      <div className="space-y-3">
+        {/* Corrosion */}
+        <div>
+          <div className="flex justify-between mb-1.5">
+            <span className="text-xs" style={{ color: D.textMuted }}>Corrosion Risk</span>
+            <span className="font-mono text-xs font-bold tabular-nums" style={{ color: corrosion !== null ? riskColor(corrosion) : D.textMuted }}>
+              {corrosion !== null ? `${corrosion}/10` : "—"}
+            </span>
+          </div>
+          <DarkProgressBar value={corrosion ?? 0} max={10} color={riskColor(corrosion ?? 0)} />
+        </div>
+
+        {/* Fungi */}
+        <div>
+          <div className="flex justify-between mb-1.5">
+            <span className="text-xs" style={{ color: D.textMuted }}>Fungal Risk</span>
+            <span className="font-mono text-xs font-bold tabular-nums" style={{ color: fungi !== null ? riskColor(fungi) : D.textMuted }}>
+              {fungi !== null ? `${fungi}/10` : "—"}
+            </span>
+          </div>
+          <DarkProgressBar value={fungi ?? 0} max={10} color={riskColor(fungi ?? 0)} />
+        </div>
+
+        {/* Sensor health */}
+        <div>
+          <div className="flex justify-between mb-1.5">
+            <span className="text-xs" style={{ color: D.textMuted }}>Sensor Health</span>
+            <span className="font-mono text-xs font-bold tabular-nums" style={{ color: "#22c55e" }}>
+              {sensorHealth !== null ? `${sensorHealth}%` : "—"}
+            </span>
+          </div>
+          <DarkProgressBar value={sensorHealth ?? 0} max={100} color="#22c55e" />
+        </div>
+      </div>
+
+      {/* MME note */}
+      <p className="text-[10px] mt-4 pt-3 leading-relaxed" style={{ color: D.textMuted, borderTop: `1px solid ${D.border}` }}>
+        <span className="font-semibold" style={{ color: D.textDim }}>MME relevance:</span> Galvanic corrosion prediction on buried metallic probes driven by live EC, pH &amp; moisture.
+      </p>
+    </DarkCard>
   );
+}
+
+/* ─── Card 3: Manual Override & Pump Control ─────────────────────── */
+function PumpControlCard({ cropKey, cropColor, sensor, aiData, targetMoisture, defaultTarget }) {
+  const { pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
+  const pumpState = pumpStates[cropKey];
+  const loading   = pumpLoadings[cropKey];
+  const isOn      = pumpState === "ON";
+
+  // Initialise slider from: live target_moisture → AI recommended → hardcoded default
+  const initialTarget = targetMoisture ?? aiData?.recommended_target ?? defaultTarget;
+  const [sliderTarget, setSliderTarget] = useState(initialTarget);
   const [saving, setSaving] = useState(false);
 
-  async function handleTargetChange(val) {
-    setManualTarget(val);
-    setSaving(true);
-    try {
-      await writeTargetMoisture(cropKey, val);
-    } finally {
-      setSaving(false);
+  // Keep slider in sync when target_moisture arrives from Firebase
+  useEffect(() => {
+    if (targetMoisture !== null && targetMoisture !== undefined) {
+      setSliderTarget(Math.round(targetMoisture));
     }
+  }, [targetMoisture]);
+
+  // Safety interlock: disable ON if moisture >= target
+  const currentMoisture = sensor?.moisture ?? 0;
+  const interlock = currentMoisture >= sliderTarget;
+
+  const pumpStatusFromTelemetry = (sensor?.pumpStatus ?? 0) === 1;
+
+  async function handleSlider(val) {
+    setSliderTarget(val);
+    setSaving(true);
+    try { await writeTargetMoisture(cropKey, val); }
+    finally { setSaving(false); }
+  }
+
+  function handlePump(desired) {
+    if (desired === "ON" && interlock) return;
+    setPumpForCrop(cropKey, desired);
   }
 
   return (
-    <Card>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-4">Irrigation Control</p>
+    <DarkCard>
+      <div className="flex items-center gap-2 mb-4">
+        <Zap size={14} style={{ color: cropColor }} />
+        <SectionLabel>Manual Override &amp; Pump Control</SectionLabel>
+      </div>
 
-      {/* Pump status */}
-      <div
-        className="flex items-center justify-between p-3 rounded-xl mb-4 border"
-        style={{
-          background: isOn ? "#f0fdf4" : unknown ? "#faf8f5" : "#faf8f5",
-          borderColor: isOn ? "#22c55e40" : "#e9e4db",
-        }}
-      >
+      {/* Pump status pill */}
+      <div className="flex items-center justify-between p-3 rounded-lg mb-5"
+        style={{ background: "#13151f", border: `1px solid ${isOn ? "#22c55e40" : D.border}` }}>
         <div className="flex items-center gap-2">
-          <span
-            className="w-2.5 h-2.5 rounded-full"
+          <span className="w-2.5 h-2.5 rounded-full"
             style={{
-              backgroundColor: isOn ? "#22c55e" : unknown ? "#b8ad99" : "#d6cec0",
+              backgroundColor: isOn ? "#22c55e" : "#3a3d4a",
               boxShadow: isOn ? "0 0 0 4px #22c55e20" : "none",
             }}
           />
-          <span className="text-sm font-bold text-surface-900">
-            {unknown ? "Connecting…" : isOn ? "Pump Running" : "OFFLINE"}
+          <span className="text-sm font-bold" style={{ color: D.text }}>
+            {pumpState === null ? "Connecting…" : isOn ? "Pump Running" : "Pump Stopped"}
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+            style={{ background: "#27272a", color: D.textMuted }}>
+            telemetry: {pumpStatusFromTelemetry ? "ON" : "OFF"}
           </span>
         </div>
-        {loading && <span className="text-[10px] text-surface-400 animate-pulse">Sending…</span>}
+        {loading && <span className="text-[10px] animate-pulse" style={{ color: D.textMuted }}>Sending…</span>}
       </div>
 
-      {/* Target moisture slider */}
+      {/* Slider */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-surface-500 font-medium">Manual Override Target</span>
-          <div className="flex items-center gap-1">
+          <span className="text-xs font-medium" style={{ color: D.textDim }}>Manual Target Moisture</span>
+          <div className="flex items-center gap-1.5">
             <span className="font-mono text-base font-bold tabular-nums" style={{ color: cropColor }}>
-              {manualTarget}%
+              {sliderTarget}%
             </span>
-            {saving && <span className="text-[9px] text-surface-400 animate-pulse ml-1">Saving…</span>}
+            {saving && <span className="text-[9px] animate-pulse" style={{ color: D.textMuted }}>Saving…</span>}
           </div>
         </div>
+        <input
+          type="range"
+          min={0} max={100}
+          value={sliderTarget}
+          onChange={(e) => handleSlider(Number(e.target.value))}
+          className="w-full h-2 rounded-full appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, ${cropColor} ${sliderTarget}%, #2a2d3a ${sliderTarget}%)`,
+            outline: "none",
+          }}
+        />
+        <div className="flex justify-between text-[9px] font-mono mt-1" style={{ color: D.textMuted }}>
+          <span>0</span><span>50</span><span>100</span>
+        </div>
+        <p className="text-[10px] mt-1.5" style={{ color: D.textMuted }}>
+          Pump auto-locks when moisture reaches this target
+        </p>
 
-        {/* Slider */}
-        <div className="relative mb-1">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={manualTarget}
-            onChange={(e) => handleTargetChange(Number(e.target.value))}
-            className="w-full h-2 rounded-full appearance-none cursor-pointer"
-            style={{
-              background: `linear-gradient(to right, ${cropColor} ${manualTarget}%, #e9e4db ${manualTarget}%)`,
-              outline: "none",
-            }}
-          />
-        </div>
-        <div className="flex justify-between text-[9px] text-surface-400 font-mono mb-1">
-          <span>0</span>
-          <span>50</span>
-          <span>100</span>
-        </div>
-        <p className="text-[10px] text-surface-400">Pump will lock when moisture reaches this target</p>
+        {/* Interlock warning */}
+        {interlock && (
+          <div className="flex items-center gap-2 mt-2 rounded-lg px-3 py-2"
+            style={{ background: "#f59e0b10", border: "1px solid #f59e0b30" }}>
+            <AlertTriangle size={12} color="#f59e0b" />
+            <span className="text-[10px] font-semibold" style={{ color: "#f59e0b" }}>
+              Interlock active — moisture ({currentMoisture}%) ≥ target ({sliderTarget}%). Pump disabled.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Pump buttons */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-3">
         <motion.button
-          whileHover={{ scale: isOn || unknown || loading ? 1 : 1.02 }}
+          whileHover={{ scale: (!isOn && !interlock && !loading && pumpState !== null) ? 1.02 : 1 }}
           whileTap={{ scale: 0.97 }}
-          onClick={() => setPumpForCrop(cropKey, "ON")}
-          disabled={isOn || unknown || loading}
-          className="flex-1 py-2.5 text-sm font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white"
-          style={{ backgroundColor: cropColor }}
+          onClick={() => handlePump("ON")}
+          disabled={isOn || interlock || loading || pumpState === null}
+          className="py-3 text-sm font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: (!isOn && !interlock && pumpState !== null) ? cropColor : "#2a2d3a",
+            color: (!isOn && !interlock && pumpState !== null) ? "white" : D.textMuted,
+            border: `1px solid ${(!isOn && !interlock && pumpState !== null) ? cropColor : D.border}`,
+          }}
         >
           {isOn ? "● Running" : "Turn Pump ON"}
         </motion.button>
         <motion.button
-          whileHover={{ scale: !isOn || unknown || loading ? 1 : 1.02 }}
+          whileHover={{ scale: (isOn && !loading) ? 1.02 : 1 }}
           whileTap={{ scale: 0.97 }}
-          onClick={() => setPumpForCrop(cropKey, "OFF")}
-          disabled={!isOn || unknown || loading}
-          className="flex-1 py-2.5 text-sm font-bold rounded-lg border border-surface-200 text-surface-600 hover:bg-surface-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={() => handlePump("OFF")}
+          disabled={!isOn || loading}
+          className="py-3 text-sm font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: "#13151f",
+            color: isOn ? "#ef4444" : D.textMuted,
+            border: `1px solid ${isOn ? "#ef444440" : D.border}`,
+          }}
         >
           Turn Pump OFF
         </motion.button>
       </div>
-    </Card>
+    </DarkCard>
   );
 }
 
-/* ─── Crop Panel ────────────────────────────────────────────────── */
-function CropPanel({ cropKey, meta, aiData }) {
-  const { targetMoistures } = useCropControls();
-  const nodes = useSensorData();
-  const node  = nodes.find((n) => n.id === meta.id) ?? null;
-  const data  = aiData ?? MOCK_AI[cropKey] ?? null;
-  const targetMoisture = targetMoistures[cropKey];
-
-  return (
-    <motion.div
-      key={cropKey}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      className="space-y-4"
-    >
-      {/* Hero banner */}
-      <div className="relative rounded-2xl overflow-hidden h-40">
-        <img
-          src={meta.image}
-          alt={meta.label}
-          className="w-full h-full object-cover"
-          style={{ filter: "saturate(0.7) brightness(0.85)" }}
-          loading="lazy"
-        />
-        <div className={`absolute inset-0 bg-gradient-to-r ${meta.bg} to-transparent`} />
-        <div className="absolute inset-0 flex flex-col justify-end p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-            Live · Firebase Connected
-          </p>
-          <div className="flex items-center gap-3">
-            <img src={meta.icon} alt={meta.label} className="w-10 h-10 rounded-xl object-cover border-2 border-white/30" />
-            <h2 className="text-2xl font-bold text-white leading-none">
-              {meta.label} Dashboard
-            </h2>
-          </div>
-        </div>
-        <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/30 backdrop-blur-sm rounded-full px-2.5 py-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping-live" />
-          <span className="text-[10px] text-white font-semibold">Live</span>
-        </div>
-      </div>
-
-      {/* Live readings */}
-      <LiveSensorStrip node={node} cropColor={meta.color} />
-
-      {/* 2-col: Materials + AI Intelligence */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <MaterialsCard data={data} />
-        <AIIntelligenceCard data={data} cropColor={meta.color} />
-      </div>
-
-      {/* Irrigation control */}
-      <IrrigationControl cropKey={cropKey} cropColor={meta.color} targetMoisture={targetMoisture} />
-    </motion.div>
-  );
-}
-
-/* ─── AIDashboard ───────────────────────────────────────────────── */
+/* ─── Main Dashboard ─────────────────────────────────────────────── */
 export default function AIDashboard() {
-  const [activeCrop, setActiveCrop] = useState("rice");
+  const [activeTab, setActiveTab] = useState("beans");
   const aiDashboard = useAIDashboard();
-  const crops = Object.entries(CROP_META);
+  const { targetMoistures, realNodes } = useCropControls();
+  const allNodes = useSensorData();
+
+  const meta       = CROP_META[activeTab];
+  const node       = allNodes.find((n) => n.id === meta.id) ?? null;
+  const sensor     = node ? {
+    moisture:    node.moisture,
+    temperature: node.temperature,
+    humidity:    node.humidity,
+    pH:          node.pH,
+    EC:          node.ec,
+    pumpStatus:  node.pumpStatus,
+  } : null;
+  const aiData         = aiDashboard[activeTab] ?? null;
+  const targetMoisture = targetMoistures[activeTab];
 
   return (
-    <div className="w-full">
+    <div className="w-full min-h-screen pb-10" style={{ background: D.bg, color: D.text }}>
       {/* Header */}
-      <div className="mb-5">
+      <div className="mb-6 pt-1">
         <div className="flex items-center gap-2 mb-1">
-          <Brain size={18} className="text-accent" />
-          <h1 className="text-lg font-bold text-surface-900">AI Dashboard</h1>
-          <span className="text-[10px] font-bold bg-accent/10 text-accent px-2 py-0.5 rounded-full uppercase tracking-wider">
-            n8n Powered
+          <Brain size={18} color="#7c3aed" />
+          <h1 className="text-lg font-bold" style={{ color: D.text }}>AI Dashboard</h1>
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+            style={{ background: "#7c3aed20", color: "#a78bfa" }}>
+            n8n · Firebase RT
           </span>
         </div>
-        <p className="text-xs text-surface-400">
-          Automated crop intelligence — sensor data, weather &amp; crop profiles analysed every 30–60 minutes.
+        <p className="text-xs" style={{ color: D.textMuted }}>
+          Real-time crop intelligence — sensor data synced every ~3 seconds via Firebase Realtime Database.
         </p>
       </div>
 
-      {/* Crop tabs */}
-      <div className="flex gap-1 bg-surface-100 rounded-xl p-1 mb-5 w-fit">
-        {crops.map(([key, meta]) => (
-          <button
-            key={key}
-            onClick={() => setActiveCrop(key)}
-            className="relative flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-all"
-            style={{
-              background: activeCrop === key ? "white" : "transparent",
-              color: activeCrop === key ? meta.color : "#9a8c75",
-              boxShadow: activeCrop === key ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-            }}
-          >
-            <img
-              src={meta.icon}
-              alt={meta.label}
-              className="w-5 h-5 rounded object-cover"
-            />
-            {meta.label}
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-semantic-green border-2 border-white" />
-          </button>
-        ))}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: D.card, border: `1px solid ${D.border}` }}>
+        {CROPS.map((key) => {
+          const m = CROP_META[key];
+          const isActive = activeTab === key;
+          const cropNode = allNodes.find((n) => n.id === m.id);
+          const isLive = cropNode?.connectivity === "live";
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className="relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+              style={{
+                background: isActive ? "#13151f" : "transparent",
+                color: isActive ? m.color : D.textMuted,
+                border: isActive ? `1px solid ${m.color}40` : "1px solid transparent",
+              }}
+            >
+              <img src={m.image} alt={m.label} className="w-5 h-5 rounded object-cover" />
+              {m.label}
+              {isLive && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2"
+                  style={{ background: "#22c55e", borderColor: D.card }} />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Panel */}
+      {/* Cards */}
       <AnimatePresence mode="wait">
-        <CropPanel
-          key={activeCrop}
-          cropKey={activeCrop}
-          meta={CROP_META[activeCrop]}
-          aiData={aiDashboard[activeCrop] ?? null}
-        />
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="space-y-4"
+        >
+          {/* Card 1 */}
+          <LiveEnvCard sensor={sensor} cropColor={meta.color} />
+
+          {/* Cards 2 + 3 side by side on wider screens */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <MaterialsAICard aiData={aiData} cropColor={meta.color} />
+            <PumpControlCard
+              cropKey={activeTab}
+              cropColor={meta.color}
+              sensor={sensor}
+              aiData={aiData}
+              targetMoisture={targetMoisture}
+              defaultTarget={meta.defaultTarget}
+            />
+          </div>
+        </motion.div>
       </AnimatePresence>
     </div>
   );
