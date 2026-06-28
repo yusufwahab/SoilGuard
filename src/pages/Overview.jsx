@@ -1,12 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useSensorData } from "../data/SensorContext";
-import { getSnapshot } from "../data/mockSensorData";
+import { useSensorData, useCropControls } from "../data/SensorContext";
 import StatusDot from "../components/ui/StatusDot";
 import StatBlock from "../components/ui/StatBlock";
 import Card from "../components/ui/Card";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
+
 function computeStress(n) {
   let s = 0;
   if (n.pH < 5.5 || n.pH > 7.5) s += 40;
@@ -66,13 +66,16 @@ function RiskBar({ label, value }) {
   );
 }
 
-/* ─── Live Field Card ──────────────────────────────────────────── */
+/* ─── Field card ───────────────────────────────────────────────── */
 function FieldCard({ node, index }) {
   const navigate = useNavigate();
-  const stress    = computeStress(node);
+  const stress = computeStress(node);
   const corrosion = computeCorrosion(node);
-  const hasAlert  = node.alerts.length > 0;
-  const connLabel = node.connectivity === "live" ? "Live" : node.connectivity === "buffered" ? "Buffered" : "Offline";
+  const hasAlert = node.alerts.length > 0;
+
+  const connLabel =
+    node.connectivity === "live" ? "Live" :
+    node.connectivity === "buffered" ? "Buffered" : "Offline";
 
   return (
     <motion.div
@@ -84,6 +87,7 @@ function FieldCard({ node, index }) {
       onClick={() => navigate(`/app/fields/${node.id}`)}
     >
       <Card className="relative h-full hover:border-surface-300 hover:shadow-sm transition-shadow duration-150 overflow-hidden" padding="none">
+        {/* Crop image thumbnail */}
         <div className="relative h-24 overflow-hidden">
           <img
             src={CROP_IMAGES[node.crop] ?? "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=400&q=70"}
@@ -101,112 +105,92 @@ function FieldCard({ node, index }) {
         </div>
 
         <div className="p-4">
-          <div className="flex items-center gap-2 mb-4 pr-2">
-            <StatusDot status={node.connectivity} />
-            <span className="text-sm font-semibold text-surface-900 truncate">{node.name}</span>
-            <span className="text-xs text-surface-400 shrink-0">{node.crop}</span>
-          </div>
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            {[
-              { label: "H₂O", val: `${node.moisture.toFixed(1)}%` },
-              { label: "pH",   val: node.pH.toFixed(1) },
-              { label: "EC",   val: node.ec.toFixed(2) },
-              { label: "Temp", val: `${node.temperature.toFixed(1)}°` },
-            ].map(({ label, val }) => (
-              <div key={label}>
-                <p className="font-mono text-sm font-semibold tabular-nums text-surface-900 leading-none mb-0.5">{val}</p>
-                <p className="text-[10px] text-surface-400">{label}</p>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2.5 pt-3 border-t border-surface-100">
-            <RiskBar label="Crop Stress"    value={stress} />
-            <RiskBar label="Corrosion Risk" value={corrosion} />
-          </div>
-          <p className="text-[10px] text-surface-400 mt-3">{connLabel} · {node.id}</p>
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-4 pr-2">
+          <StatusDot status={node.connectivity} />
+          <span className="text-sm font-semibold text-surface-900 truncate">{node.name}</span>
+          <span className="text-xs text-surface-400 shrink-0">{node.crop}</span>
+        </div>
+
+        {/* Mini readings */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {[
+            { label: "H₂O", val: `${node.moisture.toFixed(1)}%` },
+            { label: "pH",   val: node.pH.toFixed(1) },
+            { label: "EC",   val: node.ec.toFixed(2) },
+            { label: "Temp", val: `${node.temperature.toFixed(1)}°` },
+          ].map(({ label, val }) => (
+            <div key={label}>
+              <p className="font-mono text-sm font-semibold tabular-nums text-surface-900 leading-none mb-0.5">
+                {val}
+              </p>
+              <p className="text-[10px] text-surface-400">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Risk bars */}
+        <div className="space-y-2.5 pt-3 border-t border-surface-100">
+          <RiskBar label="Crop Stress" value={stress} />
+          <RiskBar label="Corrosion Risk" value={corrosion} />
+        </div>
+
+        {/* Footer */}
+        <p className="text-[10px] text-surface-400 mt-3">
+          {connLabel} &middot; {node.id}
+        </p>
         </div>
       </Card>
     </motion.div>
   );
 }
 
-/* ─── Demo / Unconnected Card ──────────────────────────────────── */
-function DemoCard({ node, index }) {
+/* ─── Sustainability Strip ─────────────────────────────────────── */
+function SustainabilityStrip() {
+  const { totalCycles, waterSavedL, autopilotCount, realNodes } = useCropControls();
+  const hasRealDevices = Object.values(realNodes).some(Boolean);
+  if (!hasRealDevices) return null;
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.065, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.4, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+      className="rounded-xl border border-surface-200 bg-surface-100/50 px-5 py-3 flex flex-wrap items-center gap-x-8 gap-y-2"
     >
-      <Card className="relative h-full overflow-hidden opacity-60" padding="none">
-        {/* Greyscale image */}
-        <div className="relative h-24 overflow-hidden">
-          <img
-            src={CROP_IMAGES[node.crop] ?? "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=400&q=70"}
-            alt={node.crop}
-            className="w-full h-full object-cover"
-            style={{ filter: "grayscale(1) brightness(0.7)" }}
-            loading="lazy"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-surface-50/95 to-transparent" />
-          {/* Demo badge */}
-          <span className="absolute top-2 left-2 text-[9px] font-bold uppercase tracking-wider text-surface-500 bg-surface-100/90 border border-surface-200 px-1.5 py-0.5 rounded">
-            Demo only
+      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mr-2 shrink-0">
+        Session impact
+      </p>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-mono text-sm font-bold tabular-nums text-semantic-green">{waterSavedL} L</span>
+        <span className="text-xs text-surface-500">water saved vs manual irrigation</span>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-mono text-sm font-bold tabular-nums text-surface-900">{totalCycles}</span>
+        <span className="text-xs text-surface-500">precision irrigation {totalCycles === 1 ? "cycle" : "cycles"}</span>
+      </div>
+      {autopilotCount > 0 && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-ping-live" />
+          <span className="text-xs font-semibold text-accent">
+            {autopilotCount} {autopilotCount === 1 ? "field" : "fields"} on autopilot
           </span>
         </div>
-
-        <div className="p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-surface-300 shrink-0" />
-            <span className="text-sm font-semibold text-surface-500 truncate">{node.name}</span>
-            <span className="text-xs text-surface-400 shrink-0">{node.crop}</span>
-          </div>
-
-          {/* Explanation */}
-          <div className="rounded-lg bg-surface-100 border border-surface-200 px-3 py-2.5 mb-3">
-            <p className="text-[11px] text-surface-500 leading-relaxed">
-              <span className="font-semibold text-surface-600">Not connected to hardware.</span>{" "}
-              This field uses randomly generated data for demonstration purposes only. No real ESP32 node is paired to this slot.
-            </p>
-          </div>
-
-          {/* Greyed-out readings */}
-          <div className="grid grid-cols-4 gap-2 mb-3 pointer-events-none select-none">
-            {[
-              { label: "H₂O", val: "—" },
-              { label: "pH",   val: "—" },
-              { label: "EC",   val: "—" },
-              { label: "Temp", val: "—" },
-            ].map(({ label, val }) => (
-              <div key={label}>
-                <p className="font-mono text-sm font-semibold text-surface-300 leading-none mb-0.5">{val}</p>
-                <p className="text-[10px] text-surface-300">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[10px] text-surface-400 border-t border-surface-100 pt-2.5">
-            To activate this slot, pair a real ESP32 node via{" "}
-            <span className="font-semibold text-surface-500">Settings → Fields & Devices</span>.
-          </p>
-        </div>
-      </Card>
+      )}
     </motion.div>
   );
 }
 
 /* ─── Overview ─────────────────────────────────────────────────── */
 export default function Overview() {
-  const navigate   = useNavigate();
-  const liveNodes  = useSensorData();                  // only real Firebase nodes
-  const demoNodes  = getSnapshot();                    // mock nodes — labelled as demo
+  const nodes = useSensorData();
+  const navigate = useNavigate();
 
-  const allNodes     = liveNodes;
-  const totalFields  = liveNodes.length;
-  const activeAlerts = liveNodes.reduce((s, n) => s + n.alerts.length, 0);
-  const onlineCount  = liveNodes.filter((n) => n.connectivity === "live").length;
-  const avgCorrosion = totalFields
-    ? Math.round(liveNodes.reduce((s, n) => s + computeCorrosion(n), 0) / totalFields)
+  const totalFields   = nodes.length;
+  const activeAlerts  = nodes.reduce((s, n) => s + n.alerts.length, 0);
+  const onlineCount   = nodes.filter((n) => n.connectivity === "live").length;
+  const avgCorrosion  = totalFields
+    ? Math.round(nodes.reduce((s, n) => s + computeCorrosion(n), 0) / totalFields)
     : 0;
 
   return (
@@ -227,7 +211,7 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* Summary stats — live nodes only */}
+      {/* Summary stats */}
       <motion.div
         className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7"
         initial={{ opacity: 0, y: 12 }}
@@ -235,7 +219,7 @@ export default function Overview() {
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       >
         <Card tinted padding="md">
-          <StatBlock label="Live fields" value={totalFields} />
+          <StatBlock label="Fields monitored" value={totalFields} />
         </Card>
         <Card tinted padding="md">
           <StatBlock
@@ -261,41 +245,18 @@ export default function Overview() {
         </Card>
       </motion.div>
 
-      {/* ── Live Firebase fields ── */}
-      {liveNodes.length > 0 && (
-        <>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-semantic-green animate-ping-live" />
-            <p className="text-xs font-bold uppercase tracking-widest text-surface-500">
-              Live — Firebase Connected
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-            {liveNodes.map((node, i) => (
-              <FieldCard key={node.id} node={node} index={i} />
-            ))}
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: liveNodes.length * 0.065 + 0.1 }}
-              onClick={() => navigate("/onboarding")}
-              className="rounded-xl border-2 border-dashed border-surface-200 p-4 flex flex-col items-center justify-center text-surface-400 hover:text-surface-600 hover:border-surface-300 transition-colors min-h-[180px] gap-2"
-            >
-              <span className="text-2xl leading-none">+</span>
-              <span className="text-xs font-medium">Add field</span>
-            </motion.button>
-          </div>
-        </>
-      )}
+      {/* Sustainability strip — only shown when a real device is connected */}
+      <SustainabilityStrip />
 
-      {liveNodes.length === 0 && (
+      {/* Field grid */}
+      {nodes.length === 0 ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-16 text-center mb-8"
+          className="flex flex-col items-center justify-center py-24 text-center"
         >
-          <p className="text-sm font-medium text-surface-500 mb-1">No live fields yet</p>
-          <p className="text-xs text-surface-400 mb-5">Pair an ESP32 node to start monitoring real data.</p>
+          <p className="text-sm font-medium text-surface-500 mb-1">No fields yet</p>
+          <p className="text-xs text-surface-400 mb-5">Set up a sensing node to start monitoring.</p>
           <button
             onClick={() => navigate("/onboarding")}
             className="px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors"
@@ -303,23 +264,25 @@ export default function Overview() {
             Add your first field
           </button>
         </motion.div>
-      )}
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {nodes.map((node, i) => (
+            <FieldCard key={node.id} node={node} index={i} />
+          ))}
 
-      {/* ── Demo / Unconnected fields ── */}
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-2 h-2 rounded-full bg-surface-300 shrink-0" />
-        <p className="text-xs font-bold uppercase tracking-widest text-surface-400">
-          Demo Slots — Not Connected to Hardware
-        </p>
-      </div>
-      <p className="text-xs text-surface-400 mb-4 leading-relaxed max-w-2xl">
-        These cards are placeholders showing randomly generated data. They are <span className="font-semibold text-surface-500">not backed by any real sensor</span>. Each slot can be activated by pairing a physical ESP32 node to it.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {demoNodes.map((node, i) => (
-          <DemoCard key={node.id} node={node} index={i} />
-        ))}
-      </div>
+          {/* Ghost add-field card */}
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: nodes.length * 0.065 + 0.1 }}
+            onClick={() => navigate("/onboarding")}
+            className="rounded-xl border-2 border-dashed border-surface-200 p-4 flex flex-col items-center justify-center text-surface-400 hover:text-surface-600 hover:border-surface-300 transition-colors min-h-50 gap-2"
+          >
+            <span className="text-2xl leading-none">+</span>
+            <span className="text-xs font-medium">Add field</span>
+          </motion.button>
+        </div>
+      )}
     </div>
   );
 }

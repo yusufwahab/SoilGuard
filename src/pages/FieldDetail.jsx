@@ -6,8 +6,8 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
 } from "recharts";
-import { useSensorData, usePumpControl } from "../data/SensorContext";
-import { getFieldById, dismissAlert, startActuation } from "../data/mockSensorData";
+import { useSensorData, useCropControls, useAIDashboard } from "../data/SensorContext";
+import { dismissAlert, startActuation } from "../data/mockSensorData";
 import StatusDot from "../components/ui/StatusDot";
 import SeverityTag from "../components/ui/SeverityTag";
 import AnimatedNumber from "../components/ui/AnimatedNumber";
@@ -45,6 +45,13 @@ function qualLevel(val, type) {
   if (type === "ec")       return val > 3.0 ? "critical" : val > 2.0 ? "watch" : "normal";
   if (type === "temp")     return val > 40 || val < 15 ? "watch" : "normal";
   return "normal";
+}
+
+function getCropKey(nodeId) {
+  if (nodeId === "SG-RICE")  return "rice";
+  if (nodeId === "SG-BEANS") return "beans";
+  if (nodeId === "SG-YAM")   return "yam";
+  return null;
 }
 
 const CROP_IMAGES = {
@@ -123,38 +130,28 @@ function ActuationModal({ alert, fieldId, fieldName, onClose }) {
               </div>
             </motion.div>
           )}
-
           {phase === "sending" && (
             <motion.div key="sending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-8 text-center">
               <p className="text-sm font-medium text-surface-600">Sending command…</p>
               <p className="text-xs text-surface-400 mt-1">Establishing relay connection</p>
             </motion.div>
           )}
-
           {phase === "running" && (
             <motion.div key="running" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-2">
               <p className="text-sm font-bold text-surface-900 mb-1">Pump running</p>
-              <p className="text-xs text-surface-500 mb-4">
-                {secsLeft}s remaining — Tank {alert.actionTank} dispensing
-              </p>
+              <p className="text-xs text-surface-500 mb-4">{secsLeft}s remaining — Tank {alert.actionTank} dispensing</p>
               <div className="h-1.5 w-full bg-surface-200 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-accent rounded-full"
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.1 }}
-                />
+                <motion.div className="h-full bg-accent rounded-full" animate={{ width: `${progress}%` }} transition={{ duration: 0.1 }} />
               </div>
               <p className="text-[10px] text-surface-400 mt-2">{Math.round(progress)}% complete</p>
             </motion.div>
           )}
-
           {phase === "verifying" && (
             <motion.div key="verifying" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-8 text-center">
               <p className="text-sm font-medium text-surface-600">Done — verifying with sensor…</p>
               <p className="text-xs text-surface-400 mt-1">Waiting for reading to confirm</p>
             </motion.div>
           )}
-
           {phase === "completed" && (
             <motion.div key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-semantic-green mb-3">Correction confirmed</p>
@@ -175,10 +172,12 @@ function ActuationModal({ alert, fieldId, fieldName, onClose }) {
   );
 }
 
-/* ─── Pump Control (real device only) ─────────────────────────── */
-function PumpControl() {
-  const { pumpState, pumpLoading, setPump } = usePumpControl();
-  const isOn = pumpState === "ON";
+/* ─── Pump Control ─────────────────────────────────────────────── */
+function PumpControl({ cropKey }) {
+  const { pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
+  const pumpState  = pumpStates[cropKey];
+  const pumpLoading = pumpLoadings[cropKey];
+  const isOn  = pumpState === "ON";
   const unknown = pumpState === null;
 
   return (
@@ -189,9 +188,7 @@ function PumpControl() {
             Pump Control — Live Hardware
           </p>
           <div className="flex items-center gap-2 mb-1">
-            <span
-              className={`w-2 h-2 rounded-full ${isOn ? "bg-semantic-green animate-ping-live" : "bg-surface-300"}`}
-            />
+            <span className={`w-2 h-2 rounded-full ${isOn ? "bg-semantic-green animate-ping-live" : "bg-surface-300"}`} />
             <span className="text-sm font-bold text-surface-900">
               {unknown ? "Connecting…" : isOn ? "Pump running" : "Pump stopped"}
             </span>
@@ -205,12 +202,11 @@ function PumpControl() {
               : "Pump is idle. Activate to dispense water to the field."}
           </p>
         </div>
-
         <div className="flex gap-2">
           <motion.button
             whileHover={{ scale: pumpLoading || isOn || unknown ? 1 : 1.02 }}
             whileTap={{ scale: 0.97 }}
-            onClick={() => setPump("ON")}
+            onClick={() => setPumpForCrop(cropKey, "ON")}
             disabled={pumpLoading || isOn || unknown}
             className={`px-5 py-2 text-sm font-bold rounded-lg transition-colors ${
               isOn
@@ -223,7 +219,7 @@ function PumpControl() {
           <motion.button
             whileHover={{ scale: pumpLoading || !isOn || unknown ? 1 : 1.02 }}
             whileTap={{ scale: 0.97 }}
-            onClick={() => setPump("OFF")}
+            onClick={() => setPumpForCrop(cropKey, "OFF")}
             disabled={pumpLoading || !isOn || unknown}
             className="px-5 py-2 text-sm font-bold rounded-lg border border-surface-200 text-surface-600 hover:bg-surface-100 hover:border-surface-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -235,13 +231,382 @@ function PumpControl() {
   );
 }
 
+/* ─── Autopilot Control ────────────────────────────────────────── */
+function AutopilotControl({ cropKey, currentMoisture }) {
+  const { autopilotEnabled, autopilotTargets, pumpStates, setAutopilot } = useCropControls();
+  const enabled     = autopilotEnabled[cropKey];
+  const target      = autopilotTargets[cropKey] ?? 60;
+  const pumpState   = pumpStates[cropKey];
+  const [localTarget, setLocalTarget] = useState(target);
+  const [saving, setSaving] = useState(false);
+
+  async function handleToggle() {
+    setSaving(true);
+    try {
+      await setAutopilot(cropKey, !enabled, localTarget);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSliderCommit(val) {
+    if (enabled) {
+      setSaving(true);
+      try {
+        await setAutopilot(cropKey, true, val);
+      } finally {
+        setSaving(false);
+      }
+    }
+  }
+
+  const moisture = currentMoisture ?? 0;
+  const needsPump = enabled && moisture < localTarget - 2;
+
+  return (
+    <Card>
+      {/* Header row */}
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-1">
+            Autopilot Mode
+          </p>
+          <p className="text-sm font-semibold text-surface-900">
+            {enabled
+              ? `Maintaining ${localTarget}% soil moisture`
+              : "Manual control active"}
+          </p>
+        </div>
+
+        {/* Toggle switch */}
+        <button
+          onClick={handleToggle}
+          disabled={saving}
+          aria-label={enabled ? "Disable autopilot" : "Enable autopilot"}
+          className={`relative w-12 h-6 rounded-full transition-colors duration-200 shrink-0 mt-1 ${
+            enabled ? "bg-accent" : "bg-surface-200"
+          } disabled:opacity-60`}
+        >
+          <motion.span
+            className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm"
+            animate={{ left: enabled ? "calc(100% - 20px)" : "4px" }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          />
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {enabled && (
+          <motion.div
+            key="autopilot-detail"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            {/* Target slider */}
+            <div className="flex items-center gap-3 mt-4 mb-3">
+              <span className="text-[10px] text-surface-400 w-8 shrink-0">30%</span>
+              <input
+                type="range"
+                min={30}
+                max={80}
+                value={localTarget}
+                onChange={(e) => setLocalTarget(Number(e.target.value))}
+                onMouseUp={(e) => handleSliderCommit(Number(e.target.value))}
+                onTouchEnd={(e) => handleSliderCommit(Number(e.target.value))}
+                className="flex-1 accent-accent h-1.5 cursor-pointer"
+              />
+              <span className="text-[10px] text-surface-400 w-8 shrink-0 text-right">80%</span>
+              <span className="font-mono text-sm font-bold text-surface-900 w-10 text-right tabular-nums">
+                {localTarget}%
+              </span>
+            </div>
+
+            {/* Live status */}
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-100/60">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                pumpState === "ON" ? "bg-semantic-green animate-ping-live" : "bg-surface-300"
+              }`} />
+              <div>
+                <p className="text-xs font-semibold text-surface-800">
+                  {pumpState === "ON"
+                    ? `Pumping — raising moisture to ${localTarget}%`
+                    : needsPump
+                    ? "Pump will activate shortly"
+                    : `Monitoring — moisture at ${moisture.toFixed(1)}% (target ${localTarget}%)`}
+                </p>
+                <p className="text-[10px] text-surface-400 mt-0.5">
+                  Device reads target every 3 seconds and actuates automatically
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {!enabled && (
+          <motion.p
+            key="autopilot-off"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-xs text-surface-400 leading-relaxed mt-2"
+          >
+            Enable to let SoilGuard autonomously maintain your target soil moisture — the device will activate and stop the pump automatically.
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      {saving && (
+        <p className="text-[10px] text-surface-400 mt-2">Syncing with device…</p>
+      )}
+    </Card>
+  );
+}
+
+/* ─── AI Dashboard Card ────────────────────────────────────────── */
+function AIDashboardCard({ cropKey }) {
+  const aiDashboard = useAIDashboard();
+  const data = aiDashboard[cropKey];
+
+  if (!data) {
+    return (
+      <Card tinted>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-3">
+          AI Analysis
+        </p>
+        <div className="flex items-center gap-2.5">
+          <span className="w-2 h-2 rounded-full bg-surface-300 animate-ping-live shrink-0" />
+          <p className="text-sm text-surface-500">Waiting for AI analysis…</p>
+        </div>
+        <p className="text-xs text-surface-400 mt-1.5 leading-relaxed">
+          Analysis is generated automatically as sensor data arrives.
+        </p>
+      </Card>
+    );
+  }
+
+  // Handle any shape the backend might send
+  const recommendation = data.recommendation ?? data.message ?? data.text ?? data.summary ?? null;
+  const action         = data.action ?? data.suggested_action ?? data.next_action ?? null;
+  const confidence     = data.confidence ?? data.score ?? null;
+  const risk           = data.risk_level ?? data.severity ?? null;
+  const ts             = data.timestamp ?? data.generated_at ?? null;
+
+  const confPct = confidence !== null
+    ? (typeof confidence === "number" && confidence <= 1 ? confidence * 100 : Number(confidence))
+    : null;
+
+  const riskColor =
+    risk === "critical" || risk === "high"  ? "text-semantic-red" :
+    risk === "watch"    || risk === "medium" ? "text-semantic-amber" :
+    "text-semantic-green";
+
+  return (
+    <Card tinted>
+      <div className="flex items-center gap-2 mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">
+          AI Analysis
+        </p>
+        {risk && (
+          <span className={`text-[10px] font-bold uppercase tracking-wide ${riskColor} ml-1`}>
+            · {risk}
+          </span>
+        )}
+        {ts && (
+          <span className="text-[10px] text-surface-300 ml-auto tabular-nums">
+            {new Date(
+              typeof ts === "number" && ts < 1e12 ? ts * 1000 : ts
+            ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
+      </div>
+
+      {recommendation && (
+        <div className="flex items-start gap-2.5 mb-4">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
+          <p className="text-sm text-surface-800 leading-relaxed">{recommendation}</p>
+        </div>
+      )}
+
+      {action && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white/60 border border-surface-200 mb-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-surface-400">Suggested action</span>
+          <span className="text-xs font-semibold text-surface-900 ml-auto">{action}</span>
+        </div>
+      )}
+
+      {confPct !== null && (
+        <div>
+          <div className="flex justify-between mb-1">
+            <span className="text-[10px] text-surface-400">AI confidence</span>
+            <span className="text-[10px] font-semibold tabular-nums text-surface-600">{Math.round(confPct)}%</span>
+          </div>
+          <div className="h-1 w-full bg-surface-200 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-accent rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${confPct}%` }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Render any extra keys as data chips */}
+      {(() => {
+        const known = new Set(["recommendation","message","text","summary","action","suggested_action","next_action","confidence","score","risk_level","severity","timestamp","generated_at"]);
+        const extras = Object.entries(data).filter(([k]) => !known.has(k));
+        if (!extras.length) return null;
+        return (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {extras.map(([k, v]) => (
+              <span key={k} className="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-md">
+                {k.replace(/_/g, " ")}: <strong className="text-surface-700">{String(v)}</strong>
+              </span>
+            ))}
+          </div>
+        );
+      })()}
+    </Card>
+  );
+}
+
+/* ─── Waste-to-Correction ──────────────────────────────────────── */
+function WasteToCorrection({ pH }) {
+  const [selected, setSelected] = useState(null);
+
+  if (pH >= 5.8) return null;
+
+  const deficit   = Math.max(0, 6.0 - pH);
+  const plotM2    = 25; // small-plot assumption
+
+  // Simplified agronomic multipliers per 25m²
+  const limeKg      = +(deficit * 2.5).toFixed(1);
+  const woodAshKg   = +(deficit * 6.0).toFixed(1);
+  const riceHuskKg  = +(deficit * 12).toFixed(1);
+  const compostKg   = +(deficit * 50).toFixed(0);
+  const limeCostNGN = Math.round(limeKg * 800);
+
+  const options = [
+    {
+      id: "wood_ash",
+      label: "Wood ash",
+      amount: `${woodAshKg} kg`,
+      cost: "FREE",
+      timeframe: "24–48 hrs",
+      note: "Fastest-acting organic option. Apply evenly and lightly till in before rain. Ash from untreated hardwood only.",
+    },
+    {
+      id: "rice_husk",
+      label: "Rice husk ash",
+      amount: `${riceHuskKg} kg`,
+      cost: "FREE",
+      timeframe: "48–72 hrs",
+      note: `Burn dried rice husks in a vented drum, apply cooled ash.${pH < 5.0 ? " Combine with wood ash for faster effect." : ""}`,
+    },
+    {
+      id: "compost",
+      label: "Vegetable compost",
+      amount: `${compostKg} kg`,
+      cost: "FREE",
+      timeframe: "5–10 days",
+      note: "Slower but also improves soil organic matter and structure long-term. Best combined with a faster option.",
+    },
+    {
+      id: "lime",
+      label: "Commercial lime (Tank B)",
+      amount: `${limeKg} kg`,
+      cost: `₦${limeCostNGN.toLocaleString()}`,
+      timeframe: "Immediate",
+      note: "Precision dispensing via the automated pump system. Fastest and most precise — use when organic options aren't available.",
+      isAutomated: true,
+    },
+  ];
+
+  return (
+    <Card>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-1">
+        Smart Correction — Waste to Value
+      </p>
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-sm font-semibold text-surface-900">
+          pH {pH.toFixed(1)} detected — target 6.0
+        </p>
+        <span className="text-xs font-semibold text-semantic-amber">+{deficit.toFixed(1)} units needed</span>
+      </div>
+      <p className="text-xs text-surface-500 mb-4 leading-relaxed">
+        Organic waste from your farm can correct this soil acidity at zero cost.
+        Choose your preferred correction method:
+      </p>
+
+      <div className="space-y-2">
+        {options.map((opt) => (
+          <button
+            key={opt.id}
+            onClick={() => setSelected(selected === opt.id ? null : opt.id)}
+            className={`w-full text-left rounded-xl border p-3.5 transition-colors ${
+              selected === opt.id
+                ? "border-accent bg-accent/5"
+                : "border-surface-200 hover:border-surface-300 hover:bg-surface-50/50"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-surface-900">{opt.label}</span>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold tabular-nums ${
+                  opt.cost === "FREE" ? "text-semantic-green" : "text-surface-600"
+                }`}>
+                  {opt.cost}
+                </span>
+                <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                  selected === opt.id ? "border-accent" : "border-surface-200"
+                }`}>
+                  {selected === opt.id && (
+                    <span className="w-2 h-2 rounded-full bg-accent" />
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-4 text-[10px] text-surface-400 mt-1">
+              <span>Apply: <span className="font-semibold text-surface-600">{opt.amount}</span></span>
+              <span>Effect in: <span className="font-semibold text-surface-600">{opt.timeframe}</span></span>
+            </div>
+            <AnimatePresence>
+              {selected === opt.id && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                  animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                  className="text-xs text-surface-600 leading-relaxed overflow-hidden"
+                >
+                  {opt.note}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 p-3 rounded-lg bg-surface-100/50 border border-surface-100">
+        <p className="text-[10px] text-surface-500 leading-relaxed">
+          <span className="font-semibold text-surface-700">Savings estimate:</span>{" "}
+          Using organic waste alternatives saves an estimated{" "}
+          <span className="font-semibold text-semantic-green">₦{limeCostNGN.toLocaleString()}</span>{" "}
+          in lime costs per correction and diverts agricultural waste from open burning.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 /* ─── FieldDetail ──────────────────────────────────────────────── */
 export default function FieldDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const nodes = useSensorData();
-  // Works for both mock nodes and the real Firebase node (SG-RICE)
-  const node = nodes.find((n) => n.id === id) ?? null;
+  const node  = nodes.find((n) => n.id === id) ?? null;
 
   const [timeRange, setTimeRange] = useState(1);
   const [chartLines, setChartLines] = useState({ moisture: true, pH: true, ec: true, temperature: false });
@@ -269,12 +634,13 @@ export default function FieldDetail() {
     );
   }
 
-  const stress = computeStress(node);
+  const stress    = computeStress(node);
   const corrosion = computeCorrosion(node);
   const activeAlert = node.alerts[0] ?? null;
   const connLabel = node.connectivity === "live" ? "Live" : node.connectivity === "buffered" ? "Buffered" : "Offline";
-  const lsi = (node.pH - 7.5 + node.ec * 0.1).toFixed(2);
+  const lsi       = (node.pH - 7.5 + node.ec * 0.1).toFixed(2);
   const serviceMos = Math.max(1, Math.round(60 - corrosion * 0.55));
+  const cropKey   = getCropKey(node.id);
 
   return (
     <motion.div
@@ -339,8 +705,13 @@ export default function FieldDetail() {
         <span className="sm:ml-auto text-surface-400 font-mono text-[11px]">{node.id}</span>
       </div>
 
-      {/* ── Pump control (real device only) ── */}
-      {node.isRealDevice && <PumpControl />}
+      {/* ── Pump control + Autopilot (real devices only) ── */}
+      {node.isRealDevice && cropKey && (
+        <>
+          <PumpControl cropKey={cropKey} />
+          <AutopilotControl cropKey={cropKey} currentMoisture={node.moisture} />
+        </>
+      )}
 
       {/* ── Live readings row ── */}
       <div className={`grid gap-3 ${
@@ -488,6 +859,12 @@ export default function FieldDetail() {
         </div>
       </Card>
 
+      {/* ── AI Analysis (real devices only) ── */}
+      {node.isRealDevice && cropKey && <AIDashboardCard cropKey={cropKey} />}
+
+      {/* ── Waste-to-correction (real devices + low pH) ── */}
+      {node.isRealDevice && <WasteToCorrection pH={node.pH} />}
+
       {/* ── Prescription card ── */}
       {activeAlert ? (
         <motion.div
@@ -518,7 +895,7 @@ export default function FieldDetail() {
               </motion.button>
             )}
             {node.isRealDevice && (
-              <p className="text-xs text-surface-400">Use the pump control above to actuate.</p>
+              <p className="text-xs text-surface-400">Use pump control or autopilot above to actuate.</p>
             )}
             {!node.isRealDevice && (
               <button
