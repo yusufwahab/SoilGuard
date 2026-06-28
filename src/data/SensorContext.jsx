@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { startStreaming, stopStreaming, getSnapshot, subscribe } from "./mockSensorData";
 import {
   onValue, off,
   sensorRef, pumpStateRef, targetMoistRef, aiDashboardRef,
@@ -53,11 +52,6 @@ function buildOfflineNode(cfg, history) {
 }
 
 export function SensorProvider({ children }) {
-  const [mockNodes, setMockNodes] = useState(() => {
-    startStreaming();
-    return getSnapshot();
-  });
-
   const [realNodes,       setRealNodes]       = useState({});
   const [pumpStates,      setPumpStates]      = useState({ rice: null, beans: null, yam: null });
   const [pumpLoadings,    setPumpLoadings]    = useState({ rice: false, beans: false, yam: false });
@@ -66,12 +60,6 @@ export function SensorProvider({ children }) {
 
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
-
-  // ── Mock data ───────────────────────────────────────────────────
-  useEffect(() => {
-    const unsub = subscribe((snap) => setMockNodes([...snap]));
-    return () => { unsub(); stopStreaming(); };
-  }, []);
 
   // ── Firebase real-time listeners ────────────────────────────────
   useEffect(() => {
@@ -169,7 +157,7 @@ export function SensorProvider({ children }) {
   const allRealNodes = CROP_CONFIGS.map((cfg) => realNodes[cfg.key]).filter(Boolean);
 
   const value = {
-    nodes:           [...mockNodes, ...allRealNodes],
+    nodes:           allRealNodes,
     // legacy rice-only (keeps FieldDetail working)
     pumpState:       pumpStates.rice,
     pumpLoading:     pumpLoadings.rice,
