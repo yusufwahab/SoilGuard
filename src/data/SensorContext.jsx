@@ -1,12 +1,19 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   onValue, off,
-  sensorRef, pumpStateRef, targetMoistRef, aiDashboardRef,
-  writePumpState, writeTargetMoisture,
+  targetMoistRef, aiDashboardRef,
+  writeTargetMoisture,
 } from "./firebaseService";
-import {
-  startStreaming, stopStreaming, getSnapshot, subscribe,
-} from "./mockSensorData";
+import { fetchAllSensors, setPumpOnESP } from "./espService";
+// -----------------------------------------------------------------------
+// MOCK / DEMO DATA -- DISABLED
+// The UI now shows ONLY real ESP32 sensor values, so there's never a doubt
+// about whether a number on screen is live hardware data or a demo drift.
+// Left commented out (not deleted) in case demo mode is wanted again later.
+// -----------------------------------------------------------------------
+// import {
+//   startStreaming, stopStreaming, getSnapshot, subscribe,
+// } from "./mockSensorData";
 
 const SensorContext = createContext(null);
 
@@ -15,6 +22,8 @@ const CROP_CONFIGS = [
   { key: "beans", id: "SG-BEANS", name: "Beans Field", crop: "Beans" },
   { key: "yam",   id: "SG-YAM",  name: "Yam Plot",    crop: "Yam"   },
 ];
+
+const POLL_INTERVAL_MS = 3000;
 
 function buildNode(cfg, sensor, history) {
   return {
@@ -55,13 +64,14 @@ function buildOfflineNode(cfg, history) {
 }
 
 export function SensorProvider({ children }) {
-  // ── Mock nodes (demo data — always present as demo/fallback) ────
-  const [mockNodes, setMockNodes] = useState(() => {
-    startStreaming();
-    return getSnapshot();
-  });
+  // ── Mock nodes -- DISABLED, always empty so only real ESP32 data renders ──
+  // const [mockNodes, setMockNodes] = useState(() => {
+  //   startStreaming();
+  //   return getSnapshot();
+  // });
+  const mockNodes = [];
 
-  // ── Real Firebase nodes ─────────────────────────────────────────
+  // ── Real ESP32 nodes (polled directly over the LAN) ──────────────
   const [realNodes,       setRealNodes]       = useState({});
   const [pumpStates,      setPumpStates]      = useState({ rice: null, beans: null, yam: null });
   const [pumpLoadings,    setPumpLoadings]    = useState({ rice: false, beans: false, yam: false });
@@ -77,69 +87,84 @@ export function SensorProvider({ children }) {
 
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
+  const pumpStatesRef   = useRef(pumpStates);
+  useEffect(() => { pumpStatesRef.current = pumpStates; }, [pumpStates]);
 
-  // ── Mock subscription ───────────────────────────────────────────
+  // ── Mock subscription -- DISABLED ───────────────────────────────
+  // useEffect(() => {
+  //   const unsub = subscribe((snap) => setMockNodes([...snap]));
+  //   return () => { unsub(); stopStreaming(); };
+  // }, []);
+
+  // ── ESP32 local polling (replaces the old Firebase sensor listener) ──
+  // The ESP32 no longer uploads to Firebase (local-only mode), so real
+  // values are fetched straight from its on-device HTTP server instead.
   useEffect(() => {
-    const unsub = subscribe((snap) => setMockNodes([...snap]));
-    return () => { unsub(); stopStreaming(); };
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const data = await fetchAllSensors(); // { rice, beans, yam }
+        if (cancelled) return;
+
+        CROP_CONFIGS.forEach((cfg) => {
+          const s = data[cfg.key];
+          if (!s) return;
+
+          historyRefs.current[cfg.key] = [
+            ...historyRefs.current[cfg.key],
+            { t: Date.now(), moisture: s.moisture, temperature: s.temperature },
+          ].slice(-200);
+
+          setRealNodes((prev) => ({
+            ...prev,
+            [cfg.key]: buildNode(cfg, s, historyRefs.current[cfg.key]),
+          }));
+
+          setPumpStates((prev) => {
+            if (pumpLoadingRefs.current[cfg.key]) return prev; // don't fight an in-flight command
+            const liveState = s.pumpStatus === 1 ? "ON" : "OFF";
+            if (prev[cfg.key] === liveState) return prev;
+            return { ...prev, [cfg.key]: liveState };
+          });
+        });
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[ESP32] Poll failed (is it reachable on the LAN?):", err.message);
+        setRealNodes((prev) => {
+          const next = { ...prev };
+          CROP_CONFIGS.forEach((cfg) => {
+            next[cfg.key] = buildOfflineNode(cfg, historyRefs.current[cfg.key]);
+          });
+          return next;
+        });
+      }
+    }
+
+    poll();
+    const intervalId = setInterval(poll, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(intervalId); };
   }, []);
 
-  // ── Firebase real-time listeners ────────────────────────────────
+  // ── Firebase real-time listeners -- FIREBASE SENSOR/PUMP SYNC DISABLED ──
+  // The ESP32 no longer reads or writes Firebase, so those channels would
+  // just sit stale. Target moisture + AI dashboard are left active since
+  // they're set from this app itself, not from the device.
   useEffect(() => {
     const unsubs = [];
 
     CROP_CONFIGS.forEach((cfg) => {
-      // Sensor data
-      const sRef = sensorRef(cfg.key);
-      const unSensor = onValue(sRef, (snap) => {
-        const s = snap.val();
-        if (!s) {
-          setRealNodes((prev) => ({
-            ...prev,
-            [cfg.key]: prev[cfg.key]
-              ? { ...prev[cfg.key], connectivity: "offline" }
-              : buildOfflineNode(cfg, historyRefs.current[cfg.key]),
-          }));
-          return;
-        }
-        historyRefs.current[cfg.key] = [
-          ...historyRefs.current[cfg.key],
-          { t: Date.now(), moisture: s.moisture, pH: s.pH, ec: s.EC, temperature: s.temperature },
-        ].slice(-200);
-        setRealNodes((prev) => ({
-          ...prev,
-          [cfg.key]: buildNode(cfg, s, historyRefs.current[cfg.key]),
-        }));
-        setPumpStates((prev) => {
-          if (pumpLoadingRefs.current[cfg.key]) return prev;
-          if (prev[cfg.key] !== null) return prev;
-          return { ...prev, [cfg.key]: s.pumpStatus === 1 ? "ON" : "OFF" };
-        });
-      }, (err) => {
-        console.error(`[Firebase] ${cfg.key}/sensor:`, err.message);
-        setRealNodes((prev) => ({
-          ...prev,
-          [cfg.key]: buildOfflineNode(cfg, historyRefs.current[cfg.key]),
-        }));
-      });
-      unsubs.push(() => off(sRef, "value", unSensor));
+      // // Sensor data -- DISABLED, replaced by the ESP32 polling effect above
+      // const sRef = sensorRef(cfg.key);
+      // const unSensor = onValue(sRef, (snap) => { ... });
+      // unsubs.push(() => off(sRef, "value", unSensor));
 
-      // Pump state — track ON→OFF cycles for sustainability stats
-      const pRef = pumpStateRef(cfg.key);
-      const unPump = onValue(pRef, (snap) => {
-        const val = snap.val();
-        if (val !== null && !pumpLoadingRefs.current[cfg.key]) {
-          setPumpStates((prev) => {
-            if (prev[cfg.key] === "ON" && val === "OFF") {
-              setPumpCycles((c) => ({ ...c, [cfg.key]: c[cfg.key] + 1 }));
-            }
-            return { ...prev, [cfg.key]: val };
-          });
-        }
-      });
-      unsubs.push(() => off(pRef, "value", unPump));
+      // // Pump state -- DISABLED, replaced by pumpStatus read straight off the poll
+      // const pRef = pumpStateRef(cfg.key);
+      // const unPump = onValue(pRef, (snap) => { ... });
+      // unsubs.push(() => off(pRef, "value", unPump));
 
-      // Target moisture
+      // Target moisture (autopilot setting saved from this app)
       const tRef = targetMoistRef(cfg.key);
       const unTarget = onValue(tRef, (snap) => {
         const val = snap.val();
@@ -159,14 +184,19 @@ export function SensorProvider({ children }) {
     return () => unsubs.forEach((fn) => fn());
   }, []);
 
-  // ── Pump write ──────────────────────────────────────────────────
+  // ── Pump write -- now goes straight to the ESP32 over the LAN ────
   async function handleSetPump(cropKey, state) {
-    if (pumpStates[cropKey] === state) return;
+    if (pumpStatesRef.current[cropKey] === state) return;
     pumpLoadingRefs.current[cropKey] = true;
     setPumpLoadings((prev) => ({ ...prev, [cropKey]: true }));
     try {
-      await writePumpState(cropKey, state);
+      await setPumpOnESP(cropKey, state);
       setPumpStates((prev) => ({ ...prev, [cropKey]: state }));
+      if (state === "OFF" && pumpStatesRef.current[cropKey] === "ON") {
+        setPumpCycles((c) => ({ ...c, [cropKey]: c[cropKey] + 1 }));
+      }
+    } catch (err) {
+      console.error(`[ESP32] Failed to set ${cropKey} pump:`, err.message);
     } finally {
       pumpLoadingRefs.current[cropKey] = false;
       setPumpLoadings((prev) => ({ ...prev, [cropKey]: false }));
@@ -191,7 +221,7 @@ export function SensorProvider({ children }) {
   const autopilotCount = Object.values(autopilotEnabled).filter(Boolean).length;
 
   const value = {
-    // Merged node list — mock first, then real (real overrides nothing, they coexist)
+    // Node list -- real ESP32 devices only (mock data disabled above)
     nodes:            [...mockNodes, ...allRealNodes],
     // Legacy rice-only surface (keeps existing usePumpControl callers working)
     pumpState:        pumpStates.rice,
