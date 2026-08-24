@@ -4,19 +4,19 @@
 #include <WebServer.h>
 #include "api_wifi.h"
 
-#define DHTPIN 16               // Safe Flash Pin for DHT11 data lines
+#define DHTPIN 32 
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
-// --- 3-PLOT HARDWARE ASSIGNMENTS ---
-#define MOISTURE_RICE 34        // Rice Moisture Sensor Analog Pin
-#define RELAY_RICE 17           // Safe Flash Pin for Rice Relay Control
+// --- SAFE 3-PLOT HARDWARE ASSIGNMENTS ---
+#define MOISTURE_RICE  36   // SVP pin (ADC1)
+#define RELAY_RICE     16   // Safe Digital Output
 
-#define MOISTURE_BEANS 32       // Beans Moisture Sensor Analog Pin
-#define RELAY_BEANS 5           // Safe Flash Pin for Beans Relay Control
+#define MOISTURE_BEANS 39   // SVN pin (ADC1)
+#define RELAY_BEANS    17   // Safe Digital Output
 
-#define MOISTURE_YAM 35         // Yam Moisture Sensor Analog Pin (Kept for local monitor)
-#define RELAY_YAM 18            // Safe Flash Pin for Yam Relay Control (Kept for local monitor)
+#define MOISTURE_YAM   34   // P34 pin (ADC1)
+#define RELAY_YAM      18   // Safe Digital Output
 
 const int DRY_VALUE = 2700;    // Calibration base value in dry open air
 const int WET_VALUE = 950;     // Calibration base value in pure water fluids

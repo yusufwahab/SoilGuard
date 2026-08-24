@@ -7,7 +7,7 @@
 
 // TODO: set this to your ESP32's local IP, printed to Serial after it
 // connects to Wi-Fi (e.g. "📶 Local IP Address: 192.168.1.42").
-export const ESP_IP = "192.168.1.42";
+export const ESP_IP = "10.201.69.233";
 
 const ESP_BASE_URL = `http://${ESP_IP}`;
 
