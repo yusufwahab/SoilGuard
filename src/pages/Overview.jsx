@@ -75,6 +75,7 @@ function FieldCard({ node, index }) {
 
   const connLabel =
     node.connectivity === "live" ? "Live" :
+    node.connectivity === "demo" ? "Demo" :
     node.connectivity === "buffered" ? "Buffered" : "Offline";
 
   return (

@@ -1,14 +1,20 @@
-import { Bell, Menu } from "lucide-react";
-import { useSensorData } from "../data/SensorContext";
+import { Bell, Menu, FlaskConical } from "lucide-react";
+import { useSensorData, useDemoStatus } from "../data/SensorContext";
 
 export default function TopStrip({ title, onMenuClick }) {
   const nodes = useSensorData();
+  const { isDemoMode, isEspDemo, isSupabaseDemo } = useDemoStatus();
   const live = nodes.filter((n) => n.connectivity === "live").length;
   const total = nodes.length;
   const alertCount = nodes.reduce((sum, n) => sum + n.alerts.length, 0);
 
   const connDot =
     live === total ? "bg-semantic-green" : live === 0 ? "bg-surface-400" : "bg-semantic-amber";
+
+  const demoTooltip = [
+    isEspDemo && "ESP32 unreachable — showing simulated sensor readings",
+    isSupabaseDemo && "Cloud services unreachable — AI dashboard showing demo data",
+  ].filter(Boolean).join(" · ");
 
   return (
     <header className="h-12 flex items-center justify-between px-4 md:px-6 border-b border-surface-200 bg-surface-50 shrink-0">
@@ -25,6 +31,17 @@ export default function TopStrip({ title, onMenuClick }) {
       </div>
 
       <div className="flex items-center gap-4 md:gap-5">
+        {/* Demo/fallback indicator — only shown while something is actually simulated */}
+        {isDemoMode && (
+          <span
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full"
+            title={demoTooltip}
+          >
+            <FlaskConical size={11} className="animate-pulse" />
+            Demo Data
+          </span>
+        )}
+
         {/* Node status — hide on small phones */}
         <div className="hidden sm:flex items-center gap-2 text-xs text-surface-500">
           <span className={`w-1.5 h-1.5 rounded-full ${connDot}`} />

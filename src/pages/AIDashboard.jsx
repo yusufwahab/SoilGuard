@@ -104,13 +104,14 @@ function LiveSensorStrip({ node, cropColor }) {
   ];
 
   const isLive = node.connectivity === "live";
+  const isDemo = node.connectivity === "demo";
 
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
         <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">Live Sensor Readings</p>
-        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isLive ? "bg-semantic-green/10 text-semantic-green" : "bg-surface-200 text-surface-400"}`}>
-          {isLive ? "● Live" : "○ Offline"}
+        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isLive ? "bg-semantic-green/10 text-semantic-green" : isDemo ? "bg-sky-100 text-sky-600" : "bg-surface-200 text-surface-400"}`}>
+          {isLive ? "● Live" : isDemo ? "◐ Demo" : "○ Offline"}
         </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

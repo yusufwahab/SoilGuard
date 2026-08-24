@@ -37,6 +37,7 @@ function FilterPill({ active, onClick, children }) {
 /* ─── Live sensor readings panel (real device only) ────────────── */
 function LiveReadingsPanel({ node }) {
   const isLive = node.connectivity === "live";
+  const isDemo = node.connectivity === "demo";
 
   const readings = [
     { label: "Temperature", value: node.temperature?.toFixed(1), unit: "°C",   color: "text-semantic-red" },
@@ -56,9 +57,9 @@ function LiveReadingsPanel({ node }) {
             Live Readings — {node.name}
           </p>
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-            isLive ? "text-semantic-green bg-semantic-green/10" : "text-semantic-red bg-semantic-red/10"
+            isLive ? "text-semantic-green bg-semantic-green/10" : isDemo ? "text-sky-600 bg-sky-100" : "text-semantic-red bg-semantic-red/10"
           }`}>
-            {isLive ? "● Live" : "○ Offline"}
+            {isLive ? "● Live" : isDemo ? "◐ Demo" : "○ Offline"}
           </span>
         </div>
         <div className="flex items-center gap-1.5 text-surface-400">

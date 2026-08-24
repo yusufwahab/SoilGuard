@@ -11,7 +11,24 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn(
+    "[Supabase] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set -- " +
+    "AI dashboard + target moisture will show demo data until .env is filled in."
+  );
+}
+
+// createClient() validates its URL eagerly and throws if it's missing --
+// without a fallback, an unconfigured .env would crash the ENTIRE app at
+// import time (a blank white screen), not just fall back to demo mode as
+// intended. The placeholder lets the app boot normally; the queries in
+// this file then fail at request time like any other network error, which
+// SensorContext's onStatus callbacks already turn into the demo-mode
+// fallback (see useDemoStatus / the navbar "Demo Data" badge).
+export const supabase = createClient(
+  supabaseUrl || "https://placeholder.invalid",
+  supabaseAnonKey || "placeholder-key"
+);
 
 // ── Target moisture / autopilot ───────────────────────────────────────
 export async function writeTargetMoisture(cropKey, value) {
@@ -26,12 +43,18 @@ export async function writeTargetMoisture(cropKey, value) {
 
 // Fetches current rows once, then streams live changes. Calls
 // onChange(cropKey, row | null) for each row, both immediately and on
-// every future insert/update/delete. Returns an unsubscribe function.
-export function subscribeTargets(onChange) {
-  supabase.from("targets").select("*").then(({ data, error }) => {
-    if (error) { console.error("[Supabase] targets fetch:", error.message); return; }
-    data?.forEach((row) => onChange(row.crop_key, row));
-  });
+// every future insert/update/delete. `onStatus(reachable)` (optional)
+// reports whether Supabase is actually reachable -- lets callers detect
+// "internet/Supabase is down" and fall back to demo data, same idea as
+// the ESP32 poll failure fallback. Returns an unsubscribe function.
+export function subscribeTargets(onChange, onStatus) {
+  supabase.from("targets").select("*")
+    .then(({ data, error }) => {
+      if (error) { console.error("[Supabase] targets fetch:", error.message); onStatus?.(false); return; }
+      onStatus?.(true);
+      data?.forEach((row) => onChange(row.crop_key, row));
+    })
+    .catch((err) => { console.error("[Supabase] targets fetch:", err.message); onStatus?.(false); });
 
   const channel = supabase
     .channel("targets-changes")
@@ -40,17 +63,23 @@ export function subscribeTargets(onChange) {
       const cropKey = row?.crop_key ?? payload.old?.crop_key;
       if (cropKey) onChange(cropKey, row);
     })
-    .subscribe();
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") onStatus?.(false);
+      else if (status === "SUBSCRIBED") onStatus?.(true);
+    });
 
   return () => supabase.removeChannel(channel);
 }
 
 // ── AI Dashboard (populated by backend/ -- see backend/src/analyze.js) ─
-export function subscribeAIDashboard(onChange) {
-  supabase.from("ai_dashboard").select("*").then(({ data, error }) => {
-    if (error) { console.error("[Supabase] ai_dashboard fetch:", error.message); return; }
-    data?.forEach((row) => onChange(row.crop_key, row));
-  });
+export function subscribeAIDashboard(onChange, onStatus) {
+  supabase.from("ai_dashboard").select("*")
+    .then(({ data, error }) => {
+      if (error) { console.error("[Supabase] ai_dashboard fetch:", error.message); onStatus?.(false); return; }
+      onStatus?.(true);
+      data?.forEach((row) => onChange(row.crop_key, row));
+    })
+    .catch((err) => { console.error("[Supabase] ai_dashboard fetch:", err.message); onStatus?.(false); });
 
   const channel = supabase
     .channel("ai-dashboard-changes")
@@ -59,7 +88,10 @@ export function subscribeAIDashboard(onChange) {
       const cropKey = row?.crop_key ?? payload.old?.crop_key;
       if (cropKey) onChange(cropKey, row);
     })
-    .subscribe();
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") onStatus?.(false);
+      else if (status === "SUBSCRIBED") onStatus?.(true);
+    });
 
   return () => supabase.removeChannel(channel);
 }

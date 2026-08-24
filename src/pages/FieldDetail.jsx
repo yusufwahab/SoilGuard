@@ -637,7 +637,10 @@ export default function FieldDetail() {
   const stress    = computeStress(node);
   const corrosion = computeCorrosion(node);
   const activeAlert = node.alerts[0] ?? null;
-  const connLabel = node.connectivity === "live" ? "Live" : node.connectivity === "buffered" ? "Buffered" : "Offline";
+  const connLabel =
+    node.connectivity === "live" ? "Live" :
+    node.connectivity === "demo" ? "Demo" :
+    node.connectivity === "buffered" ? "Buffered" : "Offline";
   const lsi       = (node.pH - 7.5 + node.ec * 0.1).toFixed(2);
   const serviceMos = Math.max(1, Math.round(60 - corrosion * 0.55));
   const cropKey   = getCropKey(node.id);
@@ -663,10 +666,10 @@ export default function FieldDetail() {
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">{node.crop} · {node.id}</p>
           <h2 className="text-2xl font-bold text-white leading-none">{node.name}</h2>
         </div>
-        {node.connectivity === "live" && (
+        {(node.connectivity === "live" || node.connectivity === "demo") && (
           <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/30 backdrop-blur-sm rounded-full px-2.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping-live" />
-            <span className="text-[10px] text-white font-semibold">Live</span>
+            <span className={`w-1.5 h-1.5 rounded-full animate-ping-live ${node.connectivity === "demo" ? "bg-sky-400" : "bg-green-400"}`} />
+            <span className="text-[10px] text-white font-semibold">{node.connectivity === "demo" ? "Demo" : "Live"}</span>
           </div>
         )}
       </div>

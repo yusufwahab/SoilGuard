@@ -5,11 +5,16 @@ import {
 } from "./supabaseService";
 import { fetchAllSensors, setPumpOnESP } from "./espService";
 import { sendAlertOnce } from "./whatsappService";
+import { getMockSensorSnapshot } from "./mockEspService";
 // -----------------------------------------------------------------------
-// MOCK / DEMO DATA -- DISABLED
-// The UI now shows ONLY real ESP32 sensor values, so there's never a doubt
-// about whether a number on screen is live hardware data or a demo drift.
-// Left commented out (not deleted) in case demo mode is wanted again later.
+// DEMO FALLBACK
+// If the ESP32 can't be reached (off, no Wi-Fi, wrong network) or
+// Supabase/the internet is down, the UI falls back to visibly-labeled
+// demo data instead of a dead/blank screen -- see connectivity: "demo"
+// below and the navbar indicator (useDemoStatus + TopStrip.jsx). This is
+// distinct from the old always-on mock system (mockSensorData.js, still
+// unused/commented below) -- that blended fake fields in permanently;
+// this only activates as a fallback, and is always clearly flagged.
 // -----------------------------------------------------------------------
 // import {
 //   startStreaming, stopStreaming, getSnapshot, subscribe,
@@ -39,7 +44,10 @@ const OFFLINE_ALERT_STREAK   = 3;       // consecutive failed polls before alert
 // durability across sessions, but writing every 3s poll would be overkill).
 const HISTORY_LOG_INTERVAL_MS = 30_000;
 
-function buildNode(cfg, sensor, history) {
+// connectivity: "live" for real ESP32 data, "demo" for the simulated
+// fallback -- same shape either way, so nothing downstream needs to
+// special-case it beyond reading node.connectivity for the badge/label.
+function buildNode(cfg, sensor, history, connectivity = "live") {
   return {
     id:            cfg.id,
     name:          cfg.name,
@@ -52,28 +60,13 @@ function buildNode(cfg, sensor, history) {
     humidity:      sensor.humidity    ?? 0,
     battery:       100,
     solarCharging: true,
-    connectivity:  "live",
+    connectivity,
     lastSeen:      Date.now(),
     alerts:        [],
     history,
     actuationState: null,
     isRealDevice:  true,
     pumpStatus:    sensor.pumpStatus  ?? 0,
-  };
-}
-
-function buildOfflineNode(cfg, history) {
-  return {
-    id: cfg.id, name: cfg.name, crop: cfg.crop,
-    lat: 0, lng: 0,
-    moisture: 0, pH: 7, ec: 0, temperature: 0, humidity: 0,
-    battery: 0, solarCharging: false,
-    connectivity: "offline",
-    lastSeen: Date.now() - 60_000,
-    alerts: [], history,
-    actuationState: null,
-    isRealDevice: true,
-    pumpStatus: 0,
   };
 }
 
@@ -98,6 +91,10 @@ export function SensorProvider({ children }) {
 
   // ── Session sustainability stats ────────────────────────────────
   const [pumpCycles, setPumpCycles] = useState({ rice: 0, beans: 0, yam: 0 });
+
+  // ── Demo fallback status (surfaced via useDemoStatus + the navbar) ───
+  const [espDemoMode, setEspDemoMode] = useState(false);
+  const [supabaseOk,  setSupabaseOk]  = useState(true); // optimistic until we hear otherwise
 
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
@@ -179,6 +176,7 @@ export function SensorProvider({ children }) {
           sendAlertOnce("device:back-online", "🟢 SoilGuard — device is back online.", 0);
         }
         offlineStreakRef.current = 0;
+        setEspDemoMode(false);
       } catch (err) {
         if (cancelled) return;
         console.error("[ESP32] Poll failed (is it reachable on the LAN?):", err.message);
@@ -186,10 +184,21 @@ export function SensorProvider({ children }) {
         if (offlineStreakRef.current === OFFLINE_ALERT_STREAK) {
           sendAlertOnce("device:offline", `🔴 SoilGuard — device unreachable after ${OFFLINE_ALERT_STREAK} checks. Check power/Wi-Fi.`);
         }
+
+        // Fall back to visible, clearly-labeled demo data instead of a
+        // dead/blank screen -- never silently blended with real values
+        // (connectivity: "demo" + the navbar indicator both flag it).
+        setEspDemoMode(true);
+        const mockSnapshot = getMockSensorSnapshot();
         setRealNodes((prev) => {
           const next = { ...prev };
           CROP_CONFIGS.forEach((cfg) => {
-            next[cfg.key] = buildOfflineNode(cfg, historyRefs.current[cfg.key]);
+            const s = mockSnapshot[cfg.key];
+            historyRefs.current[cfg.key] = [
+              ...historyRefs.current[cfg.key],
+              { t: Date.now(), moisture: s.moisture, temperature: s.temperature },
+            ].slice(-200);
+            next[cfg.key] = buildNode(cfg, s, historyRefs.current[cfg.key], "demo");
           });
           return next;
         });
@@ -207,15 +216,21 @@ export function SensorProvider({ children }) {
   // and the AI dashboard (populated by backend/, on a schedule). See
   // supabase/schema.sql for the tables this expects.
   useEffect(() => {
-    const unsubTargets = subscribeTargets((cropKey, row) => {
-      if (row && row.target_moisture !== null) {
-        setTargetMoistures((prev) => ({ ...prev, [cropKey]: row.target_moisture }));
-      }
-    });
+    const unsubTargets = subscribeTargets(
+      (cropKey, row) => {
+        if (row && row.target_moisture !== null) {
+          setTargetMoistures((prev) => ({ ...prev, [cropKey]: row.target_moisture }));
+        }
+      },
+      (reachable) => setSupabaseOk(reachable)
+    );
 
-    const unsubAI = subscribeAIDashboard((cropKey, row) => {
-      if (row) setAiDashboard((prev) => ({ ...prev, [cropKey]: row }));
-    });
+    const unsubAI = subscribeAIDashboard(
+      (cropKey, row) => {
+        if (row) setAiDashboard((prev) => ({ ...prev, [cropKey]: row }));
+      },
+      (reachable) => setSupabaseOk(reachable)
+    );
 
     return () => { unsubTargets(); unsubAI(); };
   }, []);
@@ -279,6 +294,10 @@ export function SensorProvider({ children }) {
     totalCycles,
     waterSavedL,
     autopilotCount,
+    // Demo fallback status
+    isEspDemo:      espDemoMode,
+    isSupabaseDemo: !supabaseOk,
+    isDemoMode:     espDemoMode || !supabaseOk,
   };
 
   return <SensorContext.Provider value={value}>{children}</SensorContext.Provider>;
@@ -319,6 +338,16 @@ export function useAIDashboard() {
   const ctx = useContext(SensorContext);
   if (!ctx) throw new Error("useAIDashboard must be used within SensorProvider");
   return ctx.aiDashboard;
+}
+
+// Whether any part of the app is currently showing demo/fallback data --
+// isEspDemo when the ESP32 itself is unreachable (off, no Wi-Fi, wrong
+// network), isSupabaseDemo when Supabase/the internet is unreachable
+// (affects AI dashboard + target moisture sync). Drives the navbar badge.
+export function useDemoStatus() {
+  const ctx = useContext(SensorContext);
+  if (!ctx) throw new Error("useDemoStatus must be used within SensorProvider");
+  return { isEspDemo: ctx.isEspDemo, isSupabaseDemo: ctx.isSupabaseDemo, isDemoMode: ctx.isDemoMode };
 }
 
 export { SensorContext };
