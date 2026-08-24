@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
-  onValue, off,
-  targetMoistRef, aiDashboardRef,
-  writeTargetMoisture,
-} from "./firebaseService";
+  subscribeTargets, subscribeAIDashboard,
+  writeTargetMoisture, insertSensorReading,
+} from "./supabaseService";
 import { fetchAllSensors, setPumpOnESP } from "./espService";
+import { sendAlertOnce } from "./whatsappService";
 // -----------------------------------------------------------------------
 // MOCK / DEMO DATA -- DISABLED
 // The UI now shows ONLY real ESP32 sensor values, so there's never a doubt
@@ -24,6 +24,20 @@ const CROP_CONFIGS = [
 ];
 
 const POLL_INTERVAL_MS = 3000;
+
+// ── WhatsApp alert trigger thresholds ──────────────────────────────
+// These watch the SAME poll data the UI renders -- no separate connection
+// to the ESP32, so alerts fire on the exact same "live" signal you see
+// on screen. Internet-dependent (see whatsappService.js), unlike the
+// ESP32 itself, which never needs it.
+const RAPID_CHANGE_WINDOW_MS = 60_000;  // look back ~1 minute for a swing
+const RAPID_MOISTURE_DELTA   = 15;      // percentage points within that window
+const RAPID_TEMP_DELTA       = 5;       // °C within that window
+const OFFLINE_ALERT_STREAK   = 3;       // consecutive failed polls before alerting (~9s)
+
+// Persist a sensor reading to Supabase this often (charts/AI history need
+// durability across sessions, but writing every 3s poll would be overkill).
+const HISTORY_LOG_INTERVAL_MS = 30_000;
 
 function buildNode(cfg, sensor, history) {
   return {
@@ -88,6 +102,8 @@ export function SensorProvider({ children }) {
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
   const pumpStatesRef   = useRef(pumpStates);
+  const offlineStreakRef = useRef(0); // consecutive failed polls, whole-device
+  const lastLoggedRef    = useRef({ rice: 0, beans: 0, yam: 0 });
   useEffect(() => { pumpStatesRef.current = pumpStates; }, [pumpStates]);
 
   // ── Mock subscription -- DISABLED ───────────────────────────────
@@ -111,10 +127,38 @@ export function SensorProvider({ children }) {
           const s = data[cfg.key];
           if (!s) return;
 
+          const now = Date.now();
+          const hist = historyRefs.current[cfg.key];
+
+          // Check for a rapid swing BEFORE appending -- compare against the
+          // oldest sample still inside the trailing window.
+          const baseline = [...hist].reverse().find((h) => now - h.t >= RAPID_CHANGE_WINDOW_MS);
+          if (baseline) {
+            const moistureDelta = Math.abs(s.moisture - baseline.moisture);
+            const tempDelta = Math.abs(s.temperature - baseline.temperature);
+            if (moistureDelta >= RAPID_MOISTURE_DELTA) {
+              sendAlertOnce(
+                `${cfg.key}:moisture-swing`,
+                `⚠️ SoilGuard — ${cfg.name}: moisture swung ${moistureDelta.toFixed(0)}pts in ~1min (now ${s.moisture.toFixed(0)}%). Check for a leak, rain, or a dislodged sensor.`
+              );
+            }
+            if (tempDelta >= RAPID_TEMP_DELTA) {
+              sendAlertOnce(
+                `${cfg.key}:temp-swing`,
+                `⚠️ SoilGuard — ${cfg.name}: temperature swung ${tempDelta.toFixed(1)}°C in ~1min (now ${s.temperature.toFixed(1)}°C).`
+              );
+            }
+          }
+
           historyRefs.current[cfg.key] = [
-            ...historyRefs.current[cfg.key],
-            { t: Date.now(), moisture: s.moisture, temperature: s.temperature },
+            ...hist,
+            { t: now, moisture: s.moisture, temperature: s.temperature },
           ].slice(-200);
+
+          if (now - lastLoggedRef.current[cfg.key] >= HISTORY_LOG_INTERVAL_MS) {
+            lastLoggedRef.current[cfg.key] = now;
+            insertSensorReading(cfg.key, s);
+          }
 
           setRealNodes((prev) => ({
             ...prev,
@@ -128,9 +172,20 @@ export function SensorProvider({ children }) {
             return { ...prev, [cfg.key]: liveState };
           });
         });
+
+        // Poll succeeded -- if we were previously in an alerted offline
+        // streak, let the phone know it's back before clearing the streak.
+        if (offlineStreakRef.current >= OFFLINE_ALERT_STREAK) {
+          sendAlertOnce("device:back-online", "🟢 SoilGuard — device is back online.", 0);
+        }
+        offlineStreakRef.current = 0;
       } catch (err) {
         if (cancelled) return;
         console.error("[ESP32] Poll failed (is it reachable on the LAN?):", err.message);
+        offlineStreakRef.current += 1;
+        if (offlineStreakRef.current === OFFLINE_ALERT_STREAK) {
+          sendAlertOnce("device:offline", `🔴 SoilGuard — device unreachable after ${OFFLINE_ALERT_STREAK} checks. Check power/Wi-Fi.`);
+        }
         setRealNodes((prev) => {
           const next = { ...prev };
           CROP_CONFIGS.forEach((cfg) => {
@@ -146,42 +201,23 @@ export function SensorProvider({ children }) {
     return () => { cancelled = true; clearInterval(intervalId); };
   }, []);
 
-  // ── Firebase real-time listeners -- FIREBASE SENSOR/PUMP SYNC DISABLED ──
-  // The ESP32 no longer reads or writes Firebase, so those channels would
-  // just sit stale. Target moisture + AI dashboard are left active since
-  // they're set from this app itself, not from the device.
+  // ── Supabase real-time subscriptions (replaces Firebase onValue) ──────
+  // The ESP32 never touches Supabase either -- these back only the
+  // internet-OK layer: target moisture / autopilot (set from this app)
+  // and the AI dashboard (populated by backend/, on a schedule). See
+  // supabase/schema.sql for the tables this expects.
   useEffect(() => {
-    const unsubs = [];
-
-    CROP_CONFIGS.forEach((cfg) => {
-      // // Sensor data -- DISABLED, replaced by the ESP32 polling effect above
-      // const sRef = sensorRef(cfg.key);
-      // const unSensor = onValue(sRef, (snap) => { ... });
-      // unsubs.push(() => off(sRef, "value", unSensor));
-
-      // // Pump state -- DISABLED, replaced by pumpStatus read straight off the poll
-      // const pRef = pumpStateRef(cfg.key);
-      // const unPump = onValue(pRef, (snap) => { ... });
-      // unsubs.push(() => off(pRef, "value", unPump));
-
-      // Target moisture (autopilot setting saved from this app)
-      const tRef = targetMoistRef(cfg.key);
-      const unTarget = onValue(tRef, (snap) => {
-        const val = snap.val();
-        if (val !== null) setTargetMoistures((prev) => ({ ...prev, [cfg.key]: val }));
-      });
-      unsubs.push(() => off(tRef, "value", unTarget));
-
-      // AI dashboard
-      const aRef = aiDashboardRef(cfg.key);
-      const unAI = onValue(aRef, (snap) => {
-        const val = snap.val();
-        if (val !== null) setAiDashboard((prev) => ({ ...prev, [cfg.key]: val }));
-      });
-      unsubs.push(() => off(aRef, "value", unAI));
+    const unsubTargets = subscribeTargets((cropKey, row) => {
+      if (row && row.target_moisture !== null) {
+        setTargetMoistures((prev) => ({ ...prev, [cropKey]: row.target_moisture }));
+      }
     });
 
-    return () => unsubs.forEach((fn) => fn());
+    const unsubAI = subscribeAIDashboard((cropKey, row) => {
+      if (row) setAiDashboard((prev) => ({ ...prev, [cropKey]: row }));
+    });
+
+    return () => { unsubTargets(); unsubAI(); };
   }, []);
 
   // ── Pump write -- now goes straight to the ESP32 over the LAN ────

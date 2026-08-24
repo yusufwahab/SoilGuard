@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, ShieldAlert, Droplets, Thermometer, Wind, FlaskConical } from "lucide-react";
 import { useAIDashboard, useCropControls, useSensorData } from "../data/SensorContext";
-import { writeTargetMoisture } from "../data/firebaseService";
+import { writeTargetMoisture } from "../data/supabaseService";
 import Card from "../components/ui/Card";
 
 /* ─── Crop config ───────────────────────────────────────────────── */
@@ -219,7 +219,7 @@ function AIIntelligenceCard({ data, cropColor }) {
       <div className="flex items-center gap-2 mb-4">
         <Brain size={15} style={{ color: cropColor }} />
         <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">AI Intelligence</p>
-        {!data && <span className="ml-auto text-[9px] text-surface-400 animate-pulse">Waiting for n8n report…</span>}
+        {!data && <span className="ml-auto text-[9px] text-surface-400 animate-pulse">Waiting for AI analysis…</span>}
       </div>
 
       {/* Decision badge */}
@@ -251,7 +251,7 @@ function AIIntelligenceCard({ data, cropColor }) {
         className="rounded-xl p-4 border text-sm text-surface-700 leading-relaxed"
         style={{ borderLeft: `3px solid ${cropColor}`, background: "linear-gradient(135deg, #faf8f5, #f5f2ed)" }}
       >
-        {data?.farmer_message ?? "No AI report received yet. n8n will push the next analysis in 30–60 minutes."}
+        {data?.farmer_message ?? "No AI report received yet. The backend analyzes each field roughly every 30 minutes."}
       </div>
     </Card>
   );
@@ -441,7 +441,7 @@ export default function AIDashboard() {
           <Brain size={18} className="text-accent" />
           <h1 className="text-lg font-bold text-surface-900">AI Dashboard</h1>
           <span className="text-[10px] font-bold bg-accent/10 text-accent px-2 py-0.5 rounded-full uppercase tracking-wider">
-            n8n Powered
+            Gemini · Groq · Claude
           </span>
         </div>
         <p className="text-xs text-surface-400">

@@ -1,0 +1,38 @@
+# Render Blueprint -- deploy with "New + > Blueprint" pointing at this repo,
+# root directory `backend`. Fill in the env vars marked sync: false in the
+# Render dashboard after the first deploy (never commit real secrets here).
+services:
+  - type: web
+    name: soilguard-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-opus-5
+      - key: FARM_LATITUDE
+        sync: false
+      - key: FARM_LONGITUDE
+        sync: false
+      - key: ANALYSIS_INTERVAL_MINUTES
+        value: 30
+      - key: ANALYSIS_LOOKBACK_MINUTES
+        value: 60
