@@ -4,6 +4,7 @@ import { useSensorData, useCropControls } from "../data/SensorContext";
 import StatusDot from "../components/ui/StatusDot";
 import StatBlock from "../components/ui/StatBlock";
 import Card from "../components/ui/Card";
+import WeatherWidget from "../components/WeatherWidget";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 
@@ -216,6 +217,8 @@ export default function Overview() {
           <h2 className="text-xl font-bold text-white">All Fields — SoilGuard</h2>
         </div>
       </div>
+
+      <WeatherWidget />
 
       {/* Summary stats */}
       <motion.div

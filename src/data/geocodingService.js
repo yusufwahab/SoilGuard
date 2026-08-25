@@ -6,11 +6,14 @@
 // backend/src/weatherService.js, just the lookup half.
 // -----------------------------------------------------------------------
 
-export async function geocodeLocation(query) {
+export async function geocodeLocation(query, { countryCode } = {}) {
   const trimmed = query.trim();
   if (!trimmed) throw new Error("Enter a location to search for");
 
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trimmed)}&count=1&language=en&format=json`;
+  const params = new URLSearchParams({ name: trimmed, count: "1", language: "en", format: "json" });
+  if (countryCode) params.set("countryCode", countryCode);
+
+  const url = `https://geocoding-api.open-meteo.com/v1/search?${params}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Geocoding request failed (HTTP ${res.status})`);
 

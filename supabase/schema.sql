@@ -50,10 +50,11 @@ insert into devices (id, crop_key, name) values
   ('SG-YAM',   'yam',   'Yam Plot')
 on conflict (id) do nothing;
 
--- ── Farm location (set by the farmer via Settings -> "Use my current
---    location", not hardcoded per-deployment -- this is what lets the
+-- ── Farm location (set by the farmer via Settings -> Fields & Devices --
+--    a dropdown of Nigerian states, geocoded to that state's capital via
+--    Open-Meteo, not hardcoded per-deployment). This is what lets the
 --    weather integration work for whichever customer's farm this actually
---    is, instead of one address baked into a config file). Single row for
+--    is, instead of one address baked into a config file. Single row for
 --    now (one farm per deployment); swap the fixed id for a real farm_id
 --    if this ever needs to serve multiple farms from one backend.
 create table if not exists farm_settings (
@@ -88,21 +89,53 @@ alter table devices         enable row level security;
 alter table farm_settings   enable row level security;
 alter table sensor_readings enable row level security;
 
+-- create policy has no IF NOT EXISTS in Postgres, so drop-then-create is
+-- what actually makes this file safe to re-run (unlike create table, this
+-- errors on a second run without the drop first -- learned that the hard
+-- way once already).
+--
 -- ai_dashboard is written ONLY by backend/ (using the service role key,
 -- which bypasses RLS entirely) -- the frontend/browser only ever reads it,
 -- so no public write policy here.
+drop policy if exists "public read ai_dashboard" on ai_dashboard;
 create policy "public read ai_dashboard"   on ai_dashboard    for select using (true);
 
+drop policy if exists "public read targets" on targets;
+drop policy if exists "public write targets" on targets;
 create policy "public read targets"        on targets         for select using (true);
 create policy "public write targets"       on targets         for all    using (true) with check (true);
 
+drop policy if exists "public read devices" on devices;
+drop policy if exists "public write devices" on devices;
 create policy "public read devices"        on devices         for select using (true);
 create policy "public write devices"       on devices         for all    using (true) with check (true);
 
+-- farm_settings -- written directly by the frontend (Settings page), so it
+-- needs a public write policy same as targets/devices (unlike ai_dashboard).
+drop policy if exists "public read farm_settings" on farm_settings;
+drop policy if exists "public write farm_settings" on farm_settings;
+create policy "public read farm_settings"  on farm_settings   for select using (true);
+create policy "public write farm_settings" on farm_settings   for all    using (true) with check (true);
+
+drop policy if exists "public read sensor_readings" on sensor_readings;
+drop policy if exists "public insert sensor_readings" on sensor_readings;
 create policy "public read sensor_readings"  on sensor_readings for select using (true);
 create policy "public insert sensor_readings" on sensor_readings for insert with check (true);
 
 -- ── Realtime -- so the frontend gets live updates the same way Firebase's
---    onValue() used to push them ────────────────────────────────────────
-alter publication supabase_realtime add table ai_dashboard;
-alter publication supabase_realtime add table targets;
+--    onValue() used to push them. ADD TABLE has no IF NOT EXISTS either,
+--    so check pg_publication_tables first to keep this re-runnable. ─────
+do $$ begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'ai_dashboard'
+  ) then
+    alter publication supabase_realtime add table ai_dashboard;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'targets'
+  ) then
+    alter publication supabase_realtime add table targets;
+  end if;
+end $$;

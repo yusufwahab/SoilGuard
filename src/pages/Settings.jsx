@@ -5,6 +5,7 @@ import StatusDot from "../components/ui/StatusDot";
 import { useSensorData } from "../data/SensorContext";
 import { fetchFarmSettings, writeFarmSettings } from "../data/supabaseService";
 import { geocodeLocation } from "../data/geocodingService";
+import { NIGERIAN_STATES } from "../data/nigerianStates";
 
 const TABS = [
   { id: "account",       label: "Account" },
@@ -44,35 +45,41 @@ function Field({ label, sub, children }) {
   );
 }
 
-// Lets the farmer set THEIR OWN farm's location by typing a place name --
-// no address book, no GPS permission needed. Geocoded via Open-Meteo (free,
-// no key) and saved to Supabase's farm_settings, which backend/src/
-// weatherService.js reads for rain/heat context in the AI analysis.
+// Lets the farmer set THEIR OWN farm's location by picking a state from a
+// dropdown -- no typing, no address needed (deliberately, for farmers who
+// may not read/type confidently). Each state maps to its capital city,
+// geocoded via Open-Meteo (free, no key) and saved to Supabase's
+// farm_settings, which both the live weather widget and backend/src/
+// weatherService.js read from.
 function FarmLocationCard() {
-  const [query, setQuery]   = useState("");
-  const [saved, setSaved]   = useState(null); // { name, latitude, longitude } | null
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState("");
+  const [stateName, setStateName] = useState("");
+  const [saved, setSaved]         = useState(null); // { name, latitude, longitude } | null
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState("");
 
   useEffect(() => {
     fetchFarmSettings()
       .then((row) => {
         if (row?.latitude != null) {
           setSaved(row);
-          setQuery(row.name ?? "");
+          // Preselect the dropdown if the saved location matches a known state
+          const match = NIGERIAN_STATES.find((s) => row.name?.startsWith(s.state));
+          if (match) setStateName(match.state);
         }
       })
       .catch((err) => setError(err.message));
   }, []);
 
   async function handleSave() {
+    const entry = NIGERIAN_STATES.find((s) => s.state === stateName);
+    if (!entry) { setError("Choose a state first"); return; }
     setSaving(true);
     setError("");
     try {
-      const resolved = await geocodeLocation(query);
-      await writeFarmSettings(resolved);
-      setSaved(resolved);
-      setQuery(resolved.name);
+      const resolved = await geocodeLocation(`${entry.capital}, Nigeria`, { countryCode: "NG" });
+      const labeled = { ...resolved, name: `${entry.state} (${entry.capital})` };
+      await writeFarmSettings(labeled);
+      setSaved(labeled);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -84,19 +91,22 @@ function FarmLocationCard() {
     <div className="pt-4 mt-2 border-t border-surface-100">
       <p className="text-sm text-surface-900 font-medium mb-1">Farm location</p>
       <p className="text-xs text-surface-400 mb-3 leading-snug">
-        Used by the AI backend to factor rain/heat forecasts into irrigation advice. Type a nearby town or city — an exact address isn't needed.
+        Used for rain/heat forecasts in the AI's irrigation advice, and the weather widget on the dashboard. Pick the state your farm is in.
       </p>
       <div className="flex flex-wrap gap-2 max-w-sm">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Minna, Niger State"
-          className="flex-1 min-w-0 text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 placeholder-surface-300 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors"
-        />
+        <select
+          value={stateName}
+          onChange={(e) => setStateName(e.target.value)}
+          className="flex-1 min-w-0 text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors"
+        >
+          <option value="">Select your state…</option>
+          {NIGERIAN_STATES.map((s) => (
+            <option key={s.state} value={s.state}>{s.state}</option>
+          ))}
+        </select>
         <button
           onClick={handleSave}
-          disabled={saving || !query.trim()}
+          disabled={saving || !stateName}
           className="px-4 py-2 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Saving…" : "Save"}
@@ -105,7 +115,7 @@ function FarmLocationCard() {
       {error && <p className="text-xs text-semantic-red mt-2">{error}</p>}
       {saved && !error && (
         <p className="text-xs text-semantic-green mt-2">
-          ✓ Weather connected to {saved.name} ({Number(saved.latitude).toFixed(2)}, {Number(saved.longitude).toFixed(2)})
+          ✓ Weather connected to {saved.name}
         </p>
       )}
     </div>
