@@ -7,15 +7,8 @@ import Card from "../components/ui/Card";
 
 // Real farm photography (supplied by the user) -- replaces every stock
 // Unsplash placeholder that stood in for these during earlier drafts.
-import soilWaterPhoto from "../assets/dashboard/01_soil_water_seedling.png";
-import cropHealthPhoto from "../assets/dashboard/02_crop_health_leaves.png";
-import soilConditionPhoto from "../assets/dashboard/03_soil_condition.png";
-import sensorStatusPhoto from "../assets/dashboard/04_sensor_status.png";
 import irrigationPumpPhoto from "../assets/dashboard/05_irrigation_pump.png";
 import farmFieldsMapPhoto from "../assets/dashboard/06_farm_fields_map.png";
-import soilDryPhoto from "../assets/dashboard/07_soil_moisture_dry.png";
-import soilOkayPhoto from "../assets/dashboard/08_soil_moisture_okay.png";
-import soilWetPhoto from "../assets/dashboard/09_soil_moisture_wet.png";
 import farmRowsPhoto from "../assets/dashboard/Rice_Field.webp";
 
 /* ─── Crop / zone config -- real crops, shown as "Zone N" per the design
@@ -53,20 +46,33 @@ function classifyCropHealth(aiData) {
   return { label: "HEALTHY", sub: "Crops look good", tone: "good" };
 }
 
-function classifySoilCondition(aiData) {
-  if (!aiData) return { label: "CHECKING", sub: "Waiting for update", tone: "neutral" };
-  const status = (aiData.material_health_status || "").toLowerCase();
-  if (status.startsWith("critical")) return { label: "CRITICAL", sub: "Needs attention", tone: "bad" };
-  if (status.startsWith("warning")) return { label: "WARNING", sub: "Keep watching", tone: "warn" };
-  return { label: "GOOD", sub: "No problems found", tone: "good" };
-}
-
 function classifySensorStatus(node) {
   if (!node) return { label: "NO DEVICE", sub: "Not set up yet", tone: "neutral" };
   if (node.connectivity === "live") return { label: "WORKING WELL", sub: "Sensor is active", tone: "good" };
   if (node.connectivity === "demo") return { label: "DEMO DATA", sub: "Showing sample data", tone: "warn" };
   return { label: "OFFLINE", sub: "Device disconnected", tone: "bad" };
 }
+
+// ── Risk-gauge classifiers -- corrosion/fungi are 0-10 scores from the AI
+// (backend/src/analyze.js), sensor health is already a 0-100 pct. Same
+// good/warn/bad tone system as the rest of the app, not a separate one. ──
+function classifyRiskScore(score) {
+  if (score == null) return { label: "CHECKING", tone: "neutral" };
+  if (score >= 7) return { label: "HIGH RISK", tone: "bad" };
+  if (score >= 4) return { label: "MODERATE RISK", tone: "warn" };
+  return { label: "LOW RISK", tone: "good" };
+}
+
+function classifyHealthPct(pct) {
+  if (pct == null) return { label: "CHECKING", tone: "neutral" };
+  if (pct < 50) return { label: "POOR", tone: "bad" };
+  if (pct < 80) return { label: "FAIR", tone: "warn" };
+  return { label: "GOOD", tone: "good" };
+}
+
+const CORROSION_DESC = { good: "Everything looks good", warn: "Keep an eye on buried parts", bad: "Metal parts need checking", neutral: "Waiting for update" };
+const FUNGI_DESC      = { good: "No signs of disease", warn: "Watch for early symptoms", bad: "Disease risk is high", neutral: "Waiting for update" };
+const SENSOR_HEALTH_DESC = { good: "Sensors are healthy", warn: "Sensors need attention soon", bad: "Sensor needs servicing", neutral: "Waiting for update" };
 
 // Worst-of the tiles above, used for the per-zone pill and the farm-wide headline.
 const TONE_RANK = { bad: 3, warn: 2, neutral: 1, good: 0 };
@@ -83,16 +89,101 @@ function StatusPill({ label, tone }) {
   );
 }
 
-function StatTile({ label, image, status }) {
+// Vertical two-tone bar (filled from the bottom by pct, in the tone's
+// color) + a big percentage + a short risk word + a one-line explanation --
+// the same real corrosion/fungi/sensor-health numbers the old 1-10 gauges
+// showed, just in a glanceable format a non-technical farmer can read.
+const GAUGE_COLOR = { good: "#16a34a", warn: "#d97706", bad: "#dc2626", neutral: "#94a3b8" };
+
+function RiskGauge({ label, sub, pct, riskLabel, tone, description }) {
+  const filled = pct == null ? 0 : Math.max(0, Math.min(100, pct));
   return (
-    <Card padding="none" className="overflow-hidden">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 px-3 pt-3">{label}</p>
-      <div className="px-3 pt-2 pb-3">
-        <div className="h-20 rounded-lg overflow-hidden mb-2">
-          <img src={image} alt="" className="w-full h-full object-cover" loading="lazy" />
+    <Card padding="md">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">{label}</p>
+      <p className="text-xs text-surface-400 mb-3">{sub}</p>
+      <div className="flex items-center gap-4">
+        <div className="w-6 h-24 rounded-full bg-indigo-950 overflow-hidden flex flex-col justify-end shrink-0">
+          <div className="w-full transition-all" style={{ height: `${filled}%`, backgroundColor: GAUGE_COLOR[tone] }} />
         </div>
-        <StatusPill label={status.label} tone={status.tone} />
-        <p className="text-xs text-surface-500 mt-1.5">{status.sub}</p>
+        <div>
+          <p className={`text-2xl font-bold ${TONE_STYLES[tone].text}`}>{pct == null ? "—" : `${Math.round(pct)}%`}</p>
+          <p className={`text-[11px] font-bold uppercase tracking-wide ${TONE_STYLES[tone].text}`}>{riskLabel}</p>
+        </div>
+      </div>
+      <p className="text-xs text-surface-500 mt-3">{description}</p>
+    </Card>
+  );
+}
+
+/* ─── Irrigation Control -- Manual Override Target: sets the moisture %
+   the device should auto-pump toward (real writeTargetMoisture, same
+   mechanism as FieldDetail.jsx's AutopilotControl), plus a direct manual
+   on/off override underneath for an immediate action. ────────────────── */
+function ManualOverrideTarget({ cropKey, cropLabel }) {
+  const { autopilotTargets, setAutopilot, pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
+  const target = autopilotTargets[cropKey] ?? 60;
+  const [localTarget, setLocalTarget] = useState(target);
+  const [saving, setSaving] = useState(false);
+
+  const pumpState = pumpStates[cropKey];
+  const pumpLoading = pumpLoadings[cropKey];
+  const isPumpOn = pumpState === "ON";
+
+  async function commitTarget(val) {
+    setSaving(true);
+    try {
+      await setAutopilot(cropKey, true, val);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card padding="md">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-1">Irrigation Control</p>
+      <p className="text-xs text-surface-400 mb-3">Manual Override Target · {cropLabel}</p>
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="w-full sm:w-28 h-20 rounded-lg overflow-hidden shrink-0">
+          <img src={irrigationPumpPhoto} alt="Irrigation pump" className="w-full h-full object-cover" loading="lazy" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-2xl font-bold text-semantic-green mb-2">{localTarget}%</p>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-surface-400 w-5 shrink-0">0%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={localTarget}
+              onChange={(e) => setLocalTarget(Number(e.target.value))}
+              onMouseUp={(e) => commitTarget(Number(e.target.value))}
+              onTouchEnd={(e) => commitTarget(Number(e.target.value))}
+              className="flex-1 accent-semantic-green h-1.5 cursor-pointer"
+            />
+            <span className="text-[10px] text-surface-400 w-10 shrink-0 text-right">100%</span>
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-surface-600 bg-semantic-green/10 border border-semantic-green/30 rounded-lg px-3 py-2 mt-3">
+        Pump will start when soil moisture reaches this target.{saving ? " Saving…" : ""}
+      </p>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <button
+          onClick={() => setPumpForCrop(cropKey, "ON")}
+          disabled={isPumpOn || pumpState === null || pumpLoading}
+          className="py-2.5 text-sm font-bold rounded-lg bg-semantic-green text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700"
+        >
+          TURN PUMP ON
+          <span className="block text-[10px] font-normal opacity-90">Start Watering</span>
+        </button>
+        <button
+          onClick={() => setPumpForCrop(cropKey, "OFF")}
+          disabled={!isPumpOn || pumpLoading}
+          className="py-2.5 text-sm font-bold rounded-lg border-2 border-semantic-red text-semantic-red transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-50"
+        >
+          TURN PUMP OFF
+          <span className="block text-[10px] font-normal opacity-90">Stop Watering</span>
+        </button>
       </div>
     </Card>
   );
@@ -133,29 +224,34 @@ function VoiceButton({ text, label, className }) {
   );
 }
 
-/* ─── Soil Moisture Guide -- static reference photos, not live data;
-   helps a farmer visually compare their own soil against examples. ──── */
-function SoilMoistureGuide() {
-  const items = [
-    { label: "DRY", sub: "Needs water", tone: "bad", image: soilDryPhoto },
-    { label: "OKAY", sub: "Good", tone: "good", image: soilOkayPhoto },
-    { label: "WET", sub: "Too much water", tone: "warn", image: soilWetPhoto },
-  ];
+/* ─── Soil Moisture Guide -- now doubles as the "Your Fields" zone map:
+   the aerial photo is the main visual, with a compact real-data zone
+   selector underneath (click a zone to control/hear advice for it). ──── */
+function SoilMoistureGuide({ nodeFor, aiDashboard, selected, setSelected }) {
   return (
-    <Card padding="md">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-3">Soil Moisture Guide</p>
-      <div className="grid grid-cols-3 gap-2.5">
-        {items.map((it) => (
-          <div key={it.label} className={`rounded-lg border-2 overflow-hidden`} style={{ borderColor: it.tone === "bad" ? "#ef4444" : it.tone === "warn" ? "#f59e0b" : "#22c55e" }}>
-            <div className="h-16">
-              <img src={it.image} alt="" className="w-full h-full object-cover" loading="lazy" />
-            </div>
-            <div className="px-2 py-1.5 text-center">
-              <p className="text-[10px] font-bold text-surface-900">{it.label}</p>
-              <p className="text-[9px] text-surface-400">{it.sub}</p>
-            </div>
-          </div>
-        ))}
+    <Card padding="none" className="overflow-hidden">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 px-4 pt-4 pb-3">Soil Moisture Guide</p>
+      <div className="h-36 sm:h-44">
+        <img src={farmFieldsMapPhoto} alt="Aerial view of the farm's fields" className="w-full h-full object-cover" loading="lazy" />
+      </div>
+      <div className="p-4 grid grid-cols-3 gap-2">
+        {CROP_KEYS.map((key) => {
+          const n = nodeFor(key);
+          const a = aiDashboard[key] ?? null;
+          const tone = worstTone(classifyMoisture(n?.moisture).tone, classifyCropHealth(a).tone, classifySensorStatus(n).tone);
+          const label = tone === "good" ? "GOOD" : classifyMoisture(n?.moisture).label;
+          const isSelected = key === selected;
+          return (
+            <button
+              key={key}
+              onClick={() => setSelected(key)}
+              className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-lg border-2 transition-colors text-center ${isSelected ? "border-accent bg-accent/5" : "border-surface-200 hover:border-surface-300"}`}
+            >
+              <span className="text-[11px] font-semibold text-surface-900">{CROP_META[key].zoneLabel}</span>
+              <StatusPill label={label} tone={tone} />
+            </button>
+          );
+        })}
       </div>
     </Card>
   );
@@ -172,14 +268,19 @@ export default function AIDashboard() {
   const nodeFor = (cropKey) => nodes.find((n) => n.id === CROP_META[cropKey].id) ?? null;
   const onlineCount = CROP_KEYS.filter((k) => nodeFor(k)?.connectivity === "live").length;
 
-  const node = nodeFor(selected);
   const aiData = aiDashboard[selected] ?? null;
   const meta = CROP_META[selected];
 
-  const moistureStatus = classifyMoisture(node?.moisture);
-  const cropHealthStatus = classifyCropHealth(aiData);
-  const soilConditionStatus = classifySoilCondition(aiData);
-  const sensorStatus = classifySensorStatus(node);
+  const corrosionScore = aiData?.corrosion_risk_score ?? null; // 0-10
+  const corrosionPct = corrosionScore == null ? null : corrosionScore * 10;
+  const corrosionRisk = classifyRiskScore(corrosionScore);
+
+  const fungiScore = aiData?.fungi_risk_score ?? null; // 0-10
+  const fungiPct = fungiScore == null ? null : fungiScore * 10;
+  const fungiRisk = classifyRiskScore(fungiScore);
+
+  const sensorHealthPct = aiData?.sensor_health_pct ?? null; // already 0-100
+  const sensorHealthStatus = classifyHealthPct(sensorHealthPct);
 
   const farmTone = worstTone(
     ...CROP_KEYS.map((k) => {
@@ -249,42 +350,29 @@ export default function AIDashboard() {
             </div>
           </Card>
 
-          {/* Four plain-language status tiles */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatTile label="Soil Water" image={soilWaterPhoto} status={moistureStatus} />
-            <StatTile label="Crop Health" image={cropHealthPhoto} status={cropHealthStatus} />
-            <StatTile label="Soil Condition" image={soilConditionPhoto} status={soilConditionStatus} />
-            <StatTile label="Sensor Status" image={sensorStatusPhoto} status={sensorStatus} />
+          {/* Risk & health gauges */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <RiskGauge
+              label="Corrosion Risk" sub="Risk Level"
+              pct={corrosionPct} riskLabel={corrosionRisk.label} tone={corrosionRisk.tone}
+              description={CORROSION_DESC[corrosionRisk.tone]}
+            />
+            <RiskGauge
+              label="Fungi / Disease Risk" sub="Risk Level"
+              pct={fungiPct} riskLabel={fungiRisk.label} tone={fungiRisk.tone}
+              description={FUNGI_DESC[fungiRisk.tone]}
+            />
+            <RiskGauge
+              label="Sensor Health Lifecycle" sub="Health Level"
+              pct={sensorHealthPct} riskLabel={sensorHealthStatus.label} tone={sensorHealthStatus.tone}
+              description={SENSOR_HEALTH_DESC[sensorHealthStatus.tone]}
+            />
           </div>
 
-          {/* Your Fields -- click a zone to control/hear advice for it */}
-          <Card padding="none" className="overflow-hidden">
-            <div className="h-36 sm:h-44">
-              <img src={farmFieldsMapPhoto} alt="Aerial view of the farm's fields" className="w-full h-full object-cover" loading="lazy" />
-            </div>
-            <div className="p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400 mb-3">Your Fields</p>
-              <div className="grid sm:grid-cols-3 gap-2">
-                {CROP_KEYS.map((key) => {
-                  const n = nodeFor(key);
-                  const a = aiDashboard[key] ?? null;
-                  const tone = worstTone(classifyMoisture(n?.moisture).tone, classifyCropHealth(a).tone, classifySensorStatus(n).tone);
-                  const label = tone === "good" ? "GOOD" : classifyMoisture(n?.moisture).label;
-                  const isSelected = key === selected;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setSelected(key)}
-                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border-2 transition-colors text-left ${isSelected ? "border-accent bg-accent/5" : "border-surface-200 hover:border-surface-300"}`}
-                    >
-                      <span className="text-sm font-semibold text-surface-900">{CROP_META[key].zoneLabel}</span>
-                      <StatusPill label={label} tone={tone} />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </Card>
+          {/* Irrigation Control -- Manual Override Target */}
+          {/* key= remounts on zone change so the slider re-reads that
+              crop's own target instead of carrying over a stale value */}
+          <ManualOverrideTarget key={selected} cropKey={selected} cropLabel={meta.label} />
         </div>
 
         {/* Right column (~30%) */}
@@ -328,7 +416,7 @@ export default function AIDashboard() {
             />
           </Card>
 
-          <SoilMoistureGuide />
+          <SoilMoistureGuide nodeFor={nodeFor} aiDashboard={aiDashboard} selected={selected} setSelected={setSelected} />
         </div>
       </div>
     </motion.div>
