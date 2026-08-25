@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Volume2 } from "lucide-react";
+import { Volume2, AlertTriangle } from "lucide-react";
 import { useAIDashboard, useCropControls, useSensorData, useDemoStatus } from "../data/SensorContext";
 import { fetchHausaAudio } from "../data/ttsService";
 import Card from "../components/ui/Card";
@@ -259,6 +260,7 @@ function SoilMoistureGuide({ nodeFor, aiDashboard, selected, setSelected }) {
 
 /* ─── AIDashboard ──────────────────────────────────────────────────── */
 export default function AIDashboard() {
+  const navigate = useNavigate();
   const nodes = useSensorData();
   const aiDashboard = useAIDashboard();
   const { pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
@@ -267,6 +269,12 @@ export default function AIDashboard() {
 
   const nodeFor = (cropKey) => nodes.find((n) => n.id === CROP_META[cropKey].id) ?? null;
   const onlineCount = CROP_KEYS.filter((k) => nodeFor(k)?.connectivity === "live").length;
+
+  // Same active-alert data the Bell icon badge (TopStrip.jsx), the Overview
+  // field cards, and the Alerts page all read from node.alerts -- surfaced
+  // here too so a disconnected sensor is impossible to miss on the home
+  // screen, not just buried in a badge count.
+  const activeCriticalAlerts = nodes.flatMap((n) => n.alerts.filter((a) => a.status === "active" && a.severity === "critical"));
 
   const aiData = aiDashboard[selected] ?? null;
   const meta = CROP_META[selected];
@@ -334,6 +342,25 @@ export default function AIDashboard() {
           />
         </div>
       </div>
+
+      {/* Device-disconnect alert banner -- same active alerts the Bell icon
+          badge and Alerts page show, surfaced here so it can't be missed. */}
+      {activeCriticalAlerts.length > 0 && (
+        <button
+          onClick={() => navigate("/app/alerts")}
+          className="w-full flex items-center justify-between gap-3 mb-4 rounded-xl border-l-4 border-semantic-red bg-red-50 px-4 py-3 text-left hover:bg-red-100/70 transition-colors"
+        >
+          <span className="flex items-center gap-2.5 min-w-0">
+            <AlertTriangle size={17} className="text-semantic-red shrink-0" />
+            <span className="text-sm font-semibold text-semantic-red truncate">
+              {activeCriticalAlerts.length === 1
+                ? activeCriticalAlerts[0].headline
+                : `${activeCriticalAlerts.length} devices need attention`}
+            </span>
+          </span>
+          <span className="text-xs font-semibold text-semantic-red shrink-0">View alerts →</span>
+        </button>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 mb-4">
         {/* Left column (~70%) */}

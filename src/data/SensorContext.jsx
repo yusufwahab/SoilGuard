@@ -5,6 +5,7 @@ import {
 } from "./supabaseService";
 import { fetchAllSensors, setPumpOnESP } from "./espService";
 import { sendAlertOnce } from "./telegramService";
+import { ensureNotificationPermission, sendBrowserNotification } from "./browserNotify";
 import { getMockSensorSnapshot } from "./mockEspService";
 // -----------------------------------------------------------------------
 // DEMO FALLBACK
@@ -136,6 +137,11 @@ export function SensorProvider({ children }) {
   useEffect(() => { pumpStatesRef.current = pumpStates; }, [pumpStates]);
   useEffect(() => { deviceAlertsRef.current = deviceAlerts; }, [deviceAlerts]);
 
+  // Ask for browser-notification permission once, early -- no-op if the
+  // browser doesn't support it or the user already granted/denied it in
+  // a previous session (see browserNotify.js).
+  useEffect(() => { ensureNotificationPermission(); }, []);
+
   // ── Mock subscription -- DISABLED ───────────────────────────────
   // useEffect(() => {
   //   const unsub = subscribe((snap) => setMockNodes([...snap]));
@@ -211,6 +217,7 @@ export function SensorProvider({ children }) {
         // alert card before clearing the streak.
         if (offlineStreakRef.current >= OFFLINE_ALERT_STREAK) {
           sendAlertOnce("device:back-online", "🟢 SoilGuard — device is back online.", 0);
+          sendBrowserNotification("SoilGuard — Device back online", "The sensor device is reporting again.", { tag: "soilguard-device-offline" });
           setDeviceAlerts((prev) => {
             const next = { ...prev };
             CROP_CONFIGS.forEach((cfg) => {
@@ -229,6 +236,11 @@ export function SensorProvider({ children }) {
         offlineStreakRef.current += 1;
         if (offlineStreakRef.current === OFFLINE_ALERT_STREAK) {
           sendAlertOnce("device:offline", `🔴 SoilGuard — device unreachable after ${OFFLINE_ALERT_STREAK} checks. Check power/Wi-Fi.`);
+          sendBrowserNotification(
+            "SoilGuard — Device disconnected",
+            `The sensor device hasn't responded after ${OFFLINE_ALERT_STREAK} checks. Check that it's powered on and connected to Wi-Fi.`,
+            { tag: "soilguard-device-offline" }
+          );
           // One red "disconnected" alert card per crop -- all 3 share the
           // same physical ESP32/Wi-Fi connection, so they go down together.
           setDeviceAlerts((prev) => {
