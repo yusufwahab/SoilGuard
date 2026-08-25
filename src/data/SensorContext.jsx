@@ -4,7 +4,7 @@ import {
   writeTargetMoisture, insertSensorReading,
 } from "./supabaseService";
 import { fetchAllSensors, setPumpOnESP } from "./espService";
-import { sendAlertOnce } from "./whatsappService";
+import { sendAlertOnce } from "./telegramService";
 import { getMockSensorSnapshot } from "./mockEspService";
 // -----------------------------------------------------------------------
 // DEMO FALLBACK
@@ -30,10 +30,10 @@ const CROP_CONFIGS = [
 
 const POLL_INTERVAL_MS = 3000;
 
-// ── WhatsApp alert trigger thresholds ──────────────────────────────
+// ── Alert trigger thresholds ────────────────────────────────────────
 // These watch the SAME poll data the UI renders -- no separate connection
 // to the ESP32, so alerts fire on the exact same "live" signal you see
-// on screen. Internet-dependent (see whatsappService.js), unlike the
+// on screen. Internet-dependent (see telegramService.js), unlike the
 // ESP32 itself, which never needs it.
 const RAPID_CHANGE_WINDOW_MS = 60_000;  // look back ~1 minute for a swing
 const RAPID_MOISTURE_DELTA   = 15;      // percentage points within that window

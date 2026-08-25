@@ -23,6 +23,7 @@ local-only, same as always.
    - `GROQ_API_KEY` -- from [console.groq.com](https://console.groq.com/keys). Optional, used only if Gemini fails.
    - `ANTHROPIC_API_KEY` -- from [console.anthropic.com](https://console.anthropic.com). Optional, used only if both Gemini and Groq fail.
    - `FARM_LATITUDE` / `FARM_LONGITUDE` -- your farm's coordinates. Optional -- leave blank to skip weather context; analysis still runs on sensor data alone.
+   - `TELEGRAM_*` -- see [Alerts setup](#alerts-setup) below. Optional -- leave blank to skip alerting entirely.
 3. `npm install`
 4. `npm start` (or `npm run dev` to auto-restart on file changes)
 
@@ -52,6 +53,26 @@ database as-is.
 If a crop has no `sensor_readings` in the lookback window (ESP32 offline, or
 the frontend hasn't polled it yet), that crop is skipped for that run rather
 than sending a prompt with no real data.
+
+## Alerts setup
+
+The frontend decides *when* to alert (rapid sensor swings, device going
+offline/online -- see `../src/data/SensorContext.jsx`); this backend does
+the actual sending, via the **Telegram Bot API**. Free, official, no
+per-message pricing, and no message-template approval step needed for
+unprompted alerts (unlike WhatsApp's official API, which is also why
+that path -- and the CallMeBot workaround before it -- got replaced with
+this instead; see git history for both).
+
+1. Open Telegram, search for **@BotFather**, and message it `/newbot`. Follow the prompts (pick a name, then a username ending in "bot"). It replies with a **bot token** -> `TELEGRAM_BOT_TOKEN`.
+2. Search for your new bot by its username and message it anything (e.g. "hi") -- Telegram requires the user to message a bot first before that bot can message them back. This is a one-time step, not per-alert.
+3. In your browser, visit `https://api.telegram.org/bot<token>/getUpdates` (swap in your real token). Find `"chat":{"id":...}` in the JSON response -- that number is your `TELEGRAM_CHAT_ID`.
+4. Paste both values into `.env` and restart the server.
+
+Test it directly without waiting for a real trigger:
+```bash
+curl -X POST http://localhost:8787/api/alert -H "Content-Type: application/json" -d "{\"message\":\"Test alert from SoilGuard backend\"}"
+```
 
 ## Deploying to Render
 

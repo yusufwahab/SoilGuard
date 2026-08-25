@@ -6,6 +6,7 @@ import express from "express";
 import cors from "cors";
 import { startScheduler } from "./scheduler.js";
 import { analyzeAllCrops, analyzeCrop } from "./analyze.js";
+import { sendTelegramAlert } from "./telegramService.js";
 
 const app = express();
 app.use(cors());
@@ -38,6 +39,24 @@ app.post("/api/analyze/:crop", async (req, res) => {
     const result = await analyzeCrop(crop);
     res.json({ ok: true, result });
   } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Sends an alert via the Telegram Bot API (see telegramService.js). The
+// frontend calls this instead of holding the bot token itself. Trigger/
+// cooldown logic still lives in the frontend (src/data/telegramService.js);
+// this endpoint only does the actual send.
+app.post("/api/alert", async (req, res) => {
+  const { message } = req.body || {};
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ ok: false, error: "Missing 'message' string in request body" });
+  }
+  try {
+    await sendTelegramAlert(message);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[Telegram] Send failed:", err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
