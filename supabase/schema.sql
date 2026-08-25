@@ -50,6 +50,22 @@ insert into devices (id, crop_key, name) values
   ('SG-YAM',   'yam',   'Yam Plot')
 on conflict (id) do nothing;
 
+-- ── Farm location (set by the farmer via Settings -> "Use my current
+--    location", not hardcoded per-deployment -- this is what lets the
+--    weather integration work for whichever customer's farm this actually
+--    is, instead of one address baked into a config file). Single row for
+--    now (one farm per deployment); swap the fixed id for a real farm_id
+--    if this ever needs to serve multiple farms from one backend.
+create table if not exists farm_settings (
+  id         text primary key default 'default',
+  name       text,
+  latitude   numeric,
+  longitude  numeric,
+  updated_at timestamptz not null default now()
+);
+
+insert into farm_settings (id) values ('default') on conflict (id) do nothing;
+
 -- ── Historical sensor readings (logged by the frontend as it polls the
 --    ESP32 locally -- gives AI Dashboard/History charts real persistence
 --    across sessions instead of resetting on every page refresh) ───────
@@ -69,6 +85,7 @@ create index if not exists sensor_readings_crop_time_idx
 alter table ai_dashboard    enable row level security;
 alter table targets         enable row level security;
 alter table devices         enable row level security;
+alter table farm_settings   enable row level security;
 alter table sensor_readings enable row level security;
 
 -- ai_dashboard is written ONLY by backend/ (using the service role key,

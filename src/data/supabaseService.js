@@ -119,3 +119,23 @@ export async function upsertDevice(device) {
   const { error } = await supabase.from("devices").upsert(device);
   if (error) throw error;
 }
+
+// ── Farm location (drives backend/src/weatherService.js) ──────────────
+// Single row -- one farm per deployment. Set from Settings via a typed
+// location name + src/data/geocodingService.js, not hardcoded per install.
+export async function fetchFarmSettings() {
+  const { data, error } = await supabase.from("farm_settings").select("*").eq("id", "default").maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function writeFarmSettings({ name, latitude, longitude }) {
+  const { error } = await supabase.from("farm_settings").upsert({
+    id: "default",
+    name,
+    latitude,
+    longitude,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}

@@ -14,7 +14,9 @@ local-only, same as always.
 
 ## Setup
 
-1. Run `../supabase/schema.sql` in your Supabase project's SQL editor (once).
+1. Run `../supabase/schema.sql` in your Supabase project's SQL editor (once
+   -- or re-run it if you set this up before `farm_settings` was added; it's
+   safe to re-run, `create table if not exists` won't touch existing data).
 2. `cp .env.example .env` and fill in:
    - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` -- Project Settings -> API
      in Supabase. **Service role key, not anon** -- it bypasses RLS and must
@@ -22,7 +24,7 @@ local-only, same as always.
    - `GEMINI_API_KEY` -- from [Google AI Studio](https://aistudio.google.com/apikey). Required to start.
    - `GROQ_API_KEY` -- from [console.groq.com](https://console.groq.com/keys). Optional, used only if Gemini fails.
    - `ANTHROPIC_API_KEY` -- from [console.anthropic.com](https://console.anthropic.com). Optional, used only if both Gemini and Groq fail.
-   - `FARM_LATITUDE` / `FARM_LONGITUDE` -- your farm's coordinates. Optional -- leave blank to skip weather context; analysis still runs on sensor data alone.
+   - `FARM_LATITUDE` / `FARM_LONGITUDE` -- **not the primary way to set this.** The farmer sets their own farm's location in the app's Settings page (Fields & Devices tab, types a place name like "Minna, Niger State" -- geocoded client-side via Open-Meteo, saved to Supabase). These two vars are only a fallback for before that's set.
    - `TELEGRAM_*` -- see [Alerts setup](#alerts-setup) below. Optional -- leave blank to skip alerting entirely.
 3. `npm install`
 4. `npm start` (or `npm run dev` to auto-restart on file changes)
@@ -42,8 +44,9 @@ curl -X POST http://localhost:8787/api/analyze/rice      # one crop
 
 `src/analyze.js` pulls the last `ANALYSIS_LOOKBACK_MINUTES` (default 60) of
 `sensor_readings` for a crop, reduces them to averages/min/max, adds current
-+ 24h-forecast weather for the farm (`src/weatherService.js`, cached 15 min
-so a scheduled run doesn't refetch it 3x), and prompts the AI for a
++ 24h-forecast weather for the farm (`src/weatherService.js` -- location
+read from Supabase's `farm_settings`, cached 5 min; weather itself cached
+15 min so a scheduled run doesn't refetch it 3x), and prompts the AI for a
 strict-JSON response matching the `ai_dashboard` schema
 (`farmer_message`, `recommended_target`, `fungi_risk_score`,
 `corrosion_risk_score`, `decision`, etc.). Every field is clamped/validated

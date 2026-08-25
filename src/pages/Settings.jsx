@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Card from "../components/ui/Card";
 import StatusDot from "../components/ui/StatusDot";
 import { useSensorData } from "../data/SensorContext";
+import { fetchFarmSettings, writeFarmSettings } from "../data/supabaseService";
+import { geocodeLocation } from "../data/geocodingService";
 
 const TABS = [
   { id: "account",       label: "Account" },
@@ -38,6 +40,74 @@ function Field({ label, sub, children }) {
         {sub && <p className="text-xs text-surface-400 mt-0.5 leading-snug">{sub}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// Lets the farmer set THEIR OWN farm's location by typing a place name --
+// no address book, no GPS permission needed. Geocoded via Open-Meteo (free,
+// no key) and saved to Supabase's farm_settings, which backend/src/
+// weatherService.js reads for rain/heat context in the AI analysis.
+function FarmLocationCard() {
+  const [query, setQuery]   = useState("");
+  const [saved, setSaved]   = useState(null); // { name, latitude, longitude } | null
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState("");
+
+  useEffect(() => {
+    fetchFarmSettings()
+      .then((row) => {
+        if (row?.latitude != null) {
+          setSaved(row);
+          setQuery(row.name ?? "");
+        }
+      })
+      .catch((err) => setError(err.message));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const resolved = await geocodeLocation(query);
+      await writeFarmSettings(resolved);
+      setSaved(resolved);
+      setQuery(resolved.name);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pt-4 mt-2 border-t border-surface-100">
+      <p className="text-sm text-surface-900 font-medium mb-1">Farm location</p>
+      <p className="text-xs text-surface-400 mb-3 leading-snug">
+        Used by the AI backend to factor rain/heat forecasts into irrigation advice. Type a nearby town or city — an exact address isn't needed.
+      </p>
+      <div className="flex flex-wrap gap-2 max-w-sm">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="e.g. Minna, Niger State"
+          className="flex-1 min-w-0 text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 placeholder-surface-300 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors"
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !query.trim()}
+          className="px-4 py-2 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-semantic-red mt-2">{error}</p>}
+      {saved && !error && (
+        <p className="text-xs text-semantic-green mt-2">
+          ✓ Weather connected to {saved.name} ({Number(saved.latitude).toFixed(2)}, {Number(saved.longitude).toFixed(2)})
+        </p>
+      )}
     </div>
   );
 }
@@ -175,6 +245,7 @@ export default function Settings() {
                       </div>
                     ))}
                   </div>
+                  <FarmLocationCard />
                 </Card>
               )}
 
