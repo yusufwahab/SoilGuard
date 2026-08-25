@@ -243,13 +243,16 @@ export function SensorProvider({ children }) {
           );
           // One red "disconnected" alert card per crop -- all 3 share the
           // same physical ESP32/Wi-Fi connection, so they go down together.
-          setDeviceAlerts((prev) => {
-            const next = { ...prev };
-            CROP_CONFIGS.forEach((cfg) => {
-              next[cfg.key] = [buildConnectivityAlert(cfg), ...prev[cfg.key]];
-            });
-            return next;
+          // Update the ref synchronously (not just the state setter) so the
+          // setRealNodes call just below -- same tick -- already sees the
+          // new alert, instead of waiting a full extra poll cycle for the
+          // deviceAlertsRef-sync effect to catch up.
+          const nextAlerts = { ...deviceAlertsRef.current };
+          CROP_CONFIGS.forEach((cfg) => {
+            nextAlerts[cfg.key] = [buildConnectivityAlert(cfg), ...nextAlerts[cfg.key]];
           });
+          deviceAlertsRef.current = nextAlerts;
+          setDeviceAlerts(nextAlerts);
         }
 
         // Fall back to visible, clearly-labeled demo data instead of a

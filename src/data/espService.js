@@ -13,10 +13,33 @@ const ESP_BASE_URL = `http://${ESP_IP}`;
 
 const CROPS = ["rice", "beans", "yam"];
 
+// A genuinely unreachable LAN device (unplugged, powered off, wrong Wi-Fi)
+// doesn't always make fetch() reject quickly -- with no server there to
+// send back a TCP reset, a browser can sit waiting on the connection for a
+// long time (tens of seconds, sometimes effectively indefinitely) before
+// giving up on its own. SensorContext.jsx polls every 3s and only raises
+// the "device disconnected" alert after 3 consecutive failures (~9s) --
+// that logic silently never fires if the request itself never settles.
+// A hard timeout makes every poll fail fast and predictably instead.
+const REQUEST_TIMEOUT_MS = 2500;
+
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`ESP32 did not respond within ${REQUEST_TIMEOUT_MS}ms`, { cause: err });
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Fetch the latest {temperature, humidity, moisture, pumpStatus} for all
 // three crops in one request -> { rice: {...}, beans: {...}, yam: {...} }
 export async function fetchAllSensors() {
-  const res = await fetch(`${ESP_BASE_URL}/api/sensor`);
+  const res = await fetchWithTimeout(`${ESP_BASE_URL}/api/sensor`);
   if (!res.ok) throw new Error(`ESP32 responded ${res.status}`);
   return res.json();
 }
@@ -25,7 +48,7 @@ export async function fetchAllSensors() {
 export async function setPumpOnESP(crop, state) {
   if (!CROPS.includes(crop)) throw new Error(`Unknown crop: ${crop}`);
   const path = state === "ON" ? "on" : "off";
-  const res = await fetch(`${ESP_BASE_URL}/api/pump/${crop}/${path}`);
+  const res = await fetchWithTimeout(`${ESP_BASE_URL}/api/pump/${crop}/${path}`);
   if (!res.ok) throw new Error(`ESP32 responded ${res.status}`);
   return res.json();
 }
