@@ -67,7 +67,8 @@ Note: this node only has soil moisture, air temperature, and air humidity sensor
 
 Respond with ONLY a single valid JSON object -- no markdown code fences, no commentary before or after -- with EXACTLY these fields:
 {
-  "farmer_message": string (1-3 plain-language sentences of practical advice for a farmer),
+  "farmer_message": string (1-3 plain-language sentences of practical advice for a farmer, in English),
+  "farmer_message_ha": string (the SAME advice as farmer_message, translated into natural Hausa -- not transliterated English, actual Hausa words a Hausa speaker would use. This gets read aloud by a text-to-speech voice for farmers who may not read English, so it must be real, grammatical Hausa, not a literal word-for-word translation that would sound unnatural),
   "recommended_target": number (recommended target soil moisture percentage, 0-100),
   "fungi_risk_score": number (0-10, fungal/disease risk),
   "fungi_advice": string (short actionable advice),
@@ -90,6 +91,7 @@ function clamp(value, min, max, fallback) {
 function validateAnalysis(data) {
   return {
     farmer_message:         typeof data.farmer_message === "string" ? data.farmer_message.slice(0, 1000) : "No analysis available.",
+    farmer_message_ha:      typeof data.farmer_message_ha === "string" ? data.farmer_message_ha.slice(0, 1000) : "",
     recommended_target:     clamp(data.recommended_target, 0, 100, 50),
     fungi_risk_score:       clamp(data.fungi_risk_score, 0, 10, 0),
     fungi_advice:           typeof data.fungi_advice === "string" ? data.fungi_advice.slice(0, 500) : "",

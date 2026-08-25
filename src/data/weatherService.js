@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------
-// LIVE WEATHER (frontend, via Open-Meteo -- free, no API key)
+// LIVE WEATHER (frontend, via OpenWeatherMap -- needs a free API key)
 // Fetches current conditions for the farm's saved location (set in
 // Settings -> Fields & Devices), for the pictorial weather widget on the
 // dashboard. Separate from backend/src/weatherService.js, which fetches
@@ -9,12 +9,17 @@
 // -----------------------------------------------------------------------
 
 export async function fetchCurrentWeather(latitude, longitude) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`;
+  const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+  if (!apiKey) throw new Error("VITE_OPENWEATHER_API_KEY not set");
+
+  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Weather request failed (HTTP ${res.status})`);
   const data = await res.json();
+
   return {
-    temperature: data.current.temperature_2m,
-    weatherCode: data.current.weather_code,
+    temperature: data.main?.temp,
+    weatherCode: data.weather?.[0]?.id,
+    description: data.weather?.[0]?.description,
   };
 }

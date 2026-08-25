@@ -1,18 +1,21 @@
 import { supabaseAdmin } from "./supabaseAdmin.js";
 
 // -----------------------------------------------------------------------
-// WEATHER (via Open-Meteo -- https://open-meteo.com, free, no API key)
+// WEATHER (via OpenWeatherMap -- https://openweathermap.org, free tier:
+// 1,000 calls/day, includes both endpoints used here)
 // Gives the AI analysis current conditions + a 24h forecast for the farm's
 // location, so it can factor "rain is coming" or "a heat spike is coming"
 // into its irrigation decision, not just the last hour of sensor readings.
 //
 // Location comes from Supabase's farm_settings table -- the farmer sets
-// it themselves in the frontend's Settings page (types a place name,
+// it themselves in the frontend's Settings page (state + LGA dropdowns,
 // geocoded client-side, saved to the DB). This backend never hardcodes
 // one address, since different deployments/customers have different
 // farms. FARM_LATITUDE/FARM_LONGITUDE env vars are only a fallback for
 // before the farmer has set a location via Settings.
 // -----------------------------------------------------------------------
+
+const API_KEY = process.env.OPENWEATHER_API_KEY;
 
 const WEATHER_CACHE_TTL_MS  = 15 * 60 * 1000; // weather doesn't change fast; avoid
                                                 // refetching 3x per scheduled run
@@ -54,11 +57,17 @@ async function getFarmLocation() {
   return locationCache;
 }
 
-// Returns { current: {...}, next24h: {...} }, or null if no farm location
-// is set anywhere (Supabase or env fallback), or if the fetch itself
-// fails. Callers should treat a null return as "proceed without weather
-// context" -- never let a weather outage block the sensor-based analysis.
+// Returns { current: {...}, next24h: {...} }, or null if no API key / no
+// farm location is set anywhere (Supabase or env fallback), or if the
+// fetch itself fails. Callers should treat a null return as "proceed
+// without weather context" -- never let a weather outage block the
+// sensor-based analysis.
 export async function fetchWeatherSummary() {
+  if (!API_KEY) {
+    console.warn("[Weather] OPENWEATHER_API_KEY not set -- analysis will proceed without weather context.");
+    return null;
+  }
+
   const location = await getFarmLocation();
   if (!location) {
     console.warn("[Weather] No farm location set -- add one in the app's Settings page. Analysis will proceed without weather context.");
@@ -67,32 +76,35 @@ export async function fetchWeatherSummary() {
 
   if (weatherCache && Date.now() - weatherCachedAt < WEATHER_CACHE_TTL_MS) return weatherCache;
 
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}` +
-    `&current=temperature_2m,relative_humidity_2m,precipitation,cloud_cover` +
-    `&hourly=precipitation_probability,precipitation,temperature_2m` +
-    `&forecast_days=2&timezone=auto`;
+  const { lat, lon } = location;
+  const [currentRes, forecastRes] = await Promise.all([
+    fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`),
+    fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`),
+  ]);
+  if (!currentRes.ok) throw new Error(`OpenWeatherMap current-weather responded ${currentRes.status}`);
+  if (!forecastRes.ok) throw new Error(`OpenWeatherMap forecast responded ${forecastRes.status}`);
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo responded ${res.status}`);
-  const data = await res.json();
+  const current = await currentRes.json();
+  const forecast = await forecastRes.json();
 
-  const next24Precip = data.hourly.precipitation.slice(0, 24);
-  const next24Prob    = data.hourly.precipitation_probability.slice(0, 24);
-  const next24Temp     = data.hourly.temperature_2m.slice(0, 24);
+  // 3-hourly entries; first 8 = next 24h
+  const next24 = forecast.list.slice(0, 8);
+  const rainAmounts = next24.map((e) => e.rain?.["3h"] ?? 0);
+  const rainChances = next24.map((e) => (e.pop ?? 0) * 100);
+  const temps       = next24.map((e) => e.main.temp);
 
   const summary = {
     current: {
-      temperature: round(data.current.temperature_2m),
-      humidity: round(data.current.relative_humidity_2m),
-      cloudCoverPct: round(data.current.cloud_cover),
-      precipitationMm: round(data.current.precipitation, 2),
+      temperature: round(current.main?.temp),
+      humidity: round(current.main?.humidity),
+      cloudCoverPct: round(current.clouds?.all),
+      precipitationMm: round(current.rain?.["1h"] ?? 0, 2),
     },
     next24h: {
-      maxRainChancePct: round(Math.max(...next24Prob)),
-      totalExpectedRainMm: round(next24Precip.reduce((a, b) => a + b, 0), 1),
-      tempMin: round(Math.min(...next24Temp)),
-      tempMax: round(Math.max(...next24Temp)),
+      maxRainChancePct: round(Math.max(...rainChances)),
+      totalExpectedRainMm: round(rainAmounts.reduce((a, b) => a + b, 0), 1),
+      tempMin: round(Math.min(...temps)),
+      tempMax: round(Math.max(...temps)),
     },
   };
 

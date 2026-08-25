@@ -2,10 +2,10 @@
 
 Replaces the old n8n workflow. On a schedule (default every 30 min), reads
 each crop's recent sensor history from Supabase, pulls current + forecast
-weather for the farm (via Open-Meteo -- free, no API key), asks an AI
-provider chain (**Gemini -> Groq -> Claude**, first success wins) for an
-analysis, and writes the result into Supabase's `ai_dashboard` table for
-the frontend to display.
+weather for the farm (via **OpenWeatherMap** -- free tier, needs an API
+key), asks an AI provider chain (**Gemini -> Groq -> Claude**, first
+success wins) for an analysis, and writes the result into Supabase's
+`ai_dashboard` table for the frontend to display.
 
 This backend **never talks to the ESP32** -- it only reads `sensor_readings`
 rows that the frontend already logs to Supabase as it polls the ESP32 over
@@ -24,8 +24,10 @@ local-only, same as always.
    - `GEMINI_API_KEY` -- from [Google AI Studio](https://aistudio.google.com/apikey). Required to start.
    - `GROQ_API_KEY` -- from [console.groq.com](https://console.groq.com/keys). Optional, used only if Gemini fails.
    - `ANTHROPIC_API_KEY` -- from [console.anthropic.com](https://console.anthropic.com). Optional, used only if both Gemini and Groq fail.
-   - `FARM_LATITUDE` / `FARM_LONGITUDE` -- **not the primary way to set this.** The farmer sets their own farm's location in the app's Settings page (Fields & Devices tab, types a place name like "Minna, Niger State" -- geocoded client-side via Open-Meteo, saved to Supabase). These two vars are only a fallback for before that's set.
+   - `OPENWEATHER_API_KEY` -- from [openweathermap.org](https://openweathermap.org/api) (sign up, API keys tab, copy the default key). Free tier: 1,000 calls/day. New keys can take up to ~2 hours to activate -- a 401 error right after signup is normal, not a misconfiguration. Optional -- leave blank to skip weather context; analysis still runs on sensor data alone.
+   - `FARM_LATITUDE` / `FARM_LONGITUDE` -- **not the primary way to set this.** The farmer sets their own farm's location in the app's Settings page (Fields & Devices tab, state + LGA dropdowns -- geocoded client-side via Open-Meteo's free geocoding API, saved to Supabase). These two vars are only a fallback for before that's set.
    - `TELEGRAM_*` -- see [Alerts setup](#alerts-setup) below. Optional -- leave blank to skip alerting entirely.
+   - `HUGGINGFACE_API_TOKEN` -- see [Yoruba audio setup](#yoruba-audio-setup) below. Optional -- leave blank to skip; the "Listen in Yoruba" button just won't work without it.
 3. `npm install`
 4. `npm start` (or `npm run dev` to auto-restart on file changes)
 
@@ -76,6 +78,40 @@ Test it directly without waiting for a real trigger:
 ```bash
 curl -X POST http://localhost:8787/api/alert -H "Content-Type: application/json" -d "{\"message\":\"Test alert from SoilGuard backend\"}"
 ```
+
+## Hausa audio setup
+
+The AI Dashboard has a "Listen in Hausa" button next to each crop's AI
+message, for farmers who may not read confidently. It calls this backend's
+`POST /api/tts`, which synthesizes speech via **ElevenLabs** (`eleven_v3`
+model specifically -- their default `eleven_multilingual_v2` model does
+NOT include Hausa).
+
+Two other options were checked and ruled out first: **Yoruba** was the
+original target, but `facebook/mms-tts-yor` (the only real Yoruba TTS
+model found) turned out not to be actually deployed on any HuggingFace
+Inference Provider despite being documented -- confirmed by a live 500
+error, not just a docs read. **YarnGPT** (a Nigerian-accented TTS project)
+was also checked -- it only does Nigerian-accented *English*, not the
+Yoruba or Hausa languages themselves. ElevenLabs' `eleven_v3` is the
+option that's actually real, free-tier, and confirmed to include Hausa.
+
+**Important**: TTS pronounces text, it doesn't translate it. The Hausa
+audio comes from `farmer_message_ha` -- a real Hausa translation the AI
+generates alongside the English `farmer_message` in `src/analyze.js`'s
+prompt, not the English text read with a Hausa accent.
+
+1. Sign up free at [elevenlabs.io](https://elevenlabs.io) (free tier: 10k credits/month, no card required to start).
+2. **Profile -> API Keys -> Create API Key** -> `ELEVENLABS_API_KEY`.
+3. Pick a voice: **Voice Library** in the ElevenLabs app, preview a few, copy its Voice ID (from the voice's menu/settings) -> `ELEVENLABS_VOICE_ID`.
+4. Leave `ELEVENLABS_MODEL_ID` as `eleven_v3` (the default in `.env.example`) -- other models don't support Hausa.
+5. Paste all three into `.env` and restart the server.
+
+Test it directly -- swap in real Hausa text (not written by me here; I'm not confident enough in my own Hausa to hand you a sample phrase, same reason the mock/demo AI data in AIDashboard.jsx has no farmer_message_ha):
+```bash
+curl -X POST http://localhost:8787/api/tts -H "Content-Type: application/json" -d "{\"text\":\"<paste real Hausa text here>\"}" --output test.mp3
+```
+If that downloads a playable MP3, it's working. Easiest real test: trigger a real analysis (`curl -X POST http://localhost:8787/api/analyze/rice`), then read the `farmer_message_ha` it wrote to Supabase's `ai_dashboard` table and paste that in -- guaranteed real Hausa since the AI generated it, not guessed by me.
 
 ## Deploying to Render
 

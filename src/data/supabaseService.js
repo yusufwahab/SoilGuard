@@ -121,18 +121,23 @@ export async function upsertDevice(device) {
 }
 
 // ── Farm location (drives backend/src/weatherService.js) ──────────────
-// Single row -- one farm per deployment. Set from Settings via a typed
-// location name + src/data/geocodingService.js, not hardcoded per install.
+// Single row -- one farm per deployment. Set from Settings via the state/LGA
+// dropdowns + src/data/geocodingService.js, not hardcoded per install.
+// state/lga are stored separately from `name` (a display label, which may
+// note a fallback to the state capital) so Settings can reliably preselect
+// the dropdowns on reload without having to parse them back out of `name`.
 export async function fetchFarmSettings() {
   const { data, error } = await supabase.from("farm_settings").select("*").eq("id", "default").maybeSingle();
   if (error) throw error;
   return data;
 }
 
-export async function writeFarmSettings({ name, latitude, longitude }) {
+export async function writeFarmSettings({ name, state, lga, latitude, longitude }) {
   const { error } = await supabase.from("farm_settings").upsert({
     id: "default",
     name,
+    state,
+    lga,
     latitude,
     longitude,
     updated_at: new Date().toISOString(),

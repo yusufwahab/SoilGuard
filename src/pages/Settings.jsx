@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Card from "../components/ui/Card";
 import StatusDot from "../components/ui/StatusDot";
@@ -45,39 +46,59 @@ function Field({ label, sub, children }) {
   );
 }
 
-// Lets the farmer set THEIR OWN farm's location by picking a state from a
-// dropdown -- no typing, no address needed (deliberately, for farmers who
-// may not read/type confidently). Each state maps to its capital city,
-// geocoded via Open-Meteo (free, no key) and saved to Supabase's
+// Lets the farmer set THEIR OWN farm's location by picking a state, then a
+// local government area (LGA) -- no typing, no address needed (deliberately,
+// for farmers who may not read/type confidently). Saved to Supabase's
 // farm_settings, which both the live weather widget and backend/src/
 // weatherService.js read from.
 function FarmLocationCard() {
   const [stateName, setStateName] = useState("");
+  const [lgaName, setLgaName]     = useState("");
   const [saved, setSaved]         = useState(null); // { name, latitude, longitude } | null
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState("");
+
+  const stateEntry = NIGERIAN_STATES.find((s) => s.state === stateName);
 
   useEffect(() => {
     fetchFarmSettings()
       .then((row) => {
         if (row?.latitude != null) {
           setSaved(row);
-          // Preselect the dropdown if the saved location matches a known state
-          const match = NIGERIAN_STATES.find((s) => row.name?.startsWith(s.state));
-          if (match) setStateName(match.state);
+          if (row.state) setStateName(row.state);
+          if (row.lga) setLgaName(row.lga);
         }
       })
       .catch((err) => setError(err.message));
   }, []);
 
   async function handleSave() {
-    const entry = NIGERIAN_STATES.find((s) => s.state === stateName);
-    if (!entry) { setError("Choose a state first"); return; }
+    if (!stateEntry) { setError("Choose a state first"); return; }
+    if (!lgaName) { setError("Choose a local government area"); return; }
     setSaving(true);
     setError("");
     try {
-      const resolved = await geocodeLocation(`${entry.capital}, Nigeria`, { countryCode: "NG" });
-      const labeled = { ...resolved, name: `${entry.state} (${entry.capital})` };
+      let resolved;
+      let usedFallback = false;
+      try {
+        // Most LGAs are administrative divisions, not "places" a geocoder
+        // recognizes -- try it, but don't treat a miss as fatal.
+        resolved = await geocodeLocation(`${lgaName}, Nigeria`, { countryCode: "NG" });
+      } catch {
+        // Falls back to the state capital, which always resolves -- still
+        // regionally accurate for weather purposes, just less precise, so
+        // say so rather than implying exact LGA-level precision below.
+        resolved = await geocodeLocation(`${stateEntry.capital}, Nigeria`, { countryCode: "NG" });
+        usedFallback = true;
+      }
+      const labeled = {
+        ...resolved,
+        state: stateEntry.state,
+        lga: lgaName,
+        name: usedFallback
+          ? `${stateEntry.capital} (near ${lgaName}, ${stateEntry.state})`
+          : `${lgaName}, ${stateEntry.state}`,
+      };
       await writeFarmSettings(labeled);
       setSaved(labeled);
     } catch (err) {
@@ -91,22 +112,33 @@ function FarmLocationCard() {
     <div className="pt-4 mt-2 border-t border-surface-100">
       <p className="text-sm text-surface-900 font-medium mb-1">Farm location</p>
       <p className="text-xs text-surface-400 mb-3 leading-snug">
-        Used for rain/heat forecasts in the AI's irrigation advice, and the weather widget on the dashboard. Pick the state your farm is in.
+        Used for rain/heat forecasts in the AI's irrigation advice, and the weather widget on the dashboard. Pick your state, then your local government area.
       </p>
-      <div className="flex flex-wrap gap-2 max-w-sm">
+      <div className="flex flex-wrap gap-2 max-w-md">
         <select
           value={stateName}
-          onChange={(e) => setStateName(e.target.value)}
-          className="flex-1 min-w-0 text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors"
+          onChange={(e) => { setStateName(e.target.value); setLgaName(""); }}
+          className="flex-1 min-w-[9rem] text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors"
         >
-          <option value="">Select your state…</option>
+          <option value="">Select state…</option>
           {NIGERIAN_STATES.map((s) => (
             <option key={s.state} value={s.state}>{s.state}</option>
           ))}
         </select>
+        <select
+          value={lgaName}
+          onChange={(e) => setLgaName(e.target.value)}
+          disabled={!stateEntry}
+          className="flex-1 min-w-[9rem] text-sm bg-surface-50 border border-surface-200 rounded-lg px-3 py-2 text-surface-900 focus:outline-none focus:border-surface-400 hover:border-surface-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="">{stateEntry ? "Select LGA…" : "Select state first"}</option>
+          {stateEntry?.lgas.map((lga) => (
+            <option key={lga} value={lga}>{lga}</option>
+          ))}
+        </select>
         <button
           onClick={handleSave}
-          disabled={saving || !stateName}
+          disabled={saving || !stateEntry || !lgaName}
           className="px-4 py-2 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Saving…" : "Save"}
@@ -138,7 +170,11 @@ function InputRow({ label, type = "text", defaultValue, placeholder }) {
 
 export default function Settings() {
   const nodes = useSensorData();
-  const [activeTab, setActiveTab]           = useState("account");
+  const routerLocation = useLocation();
+  // Lands on a specific tab when navigated here with state, e.g. the
+  // WeatherWidget's "set your farm location" link jumps straight to
+  // Fields & Devices instead of the default Account tab.
+  const [activeTab, setActiveTab]           = useState(routerLocation.state?.tab ?? "account");
   const [dash, setDash]                     = useState(true);
   const [whatsapp, setWhatsapp]             = useState(false);
   const [email, setEmail]                   = useState(false);

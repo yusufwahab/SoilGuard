@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, ShieldAlert, Droplets, Thermometer, Wind, FlaskConical } from "lucide-react";
+import { Brain, ShieldAlert, Droplets, Thermometer, Wind, FlaskConical, Volume2 } from "lucide-react";
 import { useAIDashboard, useCropControls, useSensorData } from "../data/SensorContext";
 import { writeTargetMoisture } from "../data/supabaseService";
+import { fetchHausaAudio } from "../data/ttsService";
 import Card from "../components/ui/Card";
 
 /* ─── Crop config ───────────────────────────────────────────────── */
@@ -47,11 +48,22 @@ const MOCK_AI = {
 };
 
 /* ─── Helpers ───────────────────────────────────────────────────── */
+// Icons/color-coding are ADDITIVE alongside the existing numbers/text --
+// universal visual language (faces, traffic-light color) for anyone who
+// can't confidently read the English labels, without removing the
+// detail that matters for a technical audience.
 function riskColor(score, max = 10) {
   const pct = score / max;
   if (pct >= 0.7) return "#ef4444";
   if (pct >= 0.4) return "#f59e0b";
   return "#22c55e";
+}
+
+function riskFace(score, max = 10) {
+  const pct = score / max;
+  if (pct >= 0.7) return "😟";
+  if (pct >= 0.4) return "😐";
+  return "🙂";
 }
 
 function RiskScore({ label, score, max = 10 }) {
@@ -60,7 +72,10 @@ function RiskScore({ label, score, max = 10 }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1.5">
-        <span className="text-xs text-surface-500">{label}</span>
+        <span className="flex items-center gap-1.5 text-xs text-surface-500">
+          <span className="text-base leading-none" role="img" aria-hidden="true">{riskFace(score, max)}</span>
+          {label}
+        </span>
         <span className="font-mono text-sm font-bold tabular-nums" style={{ color }}>
           {score}/{max}
         </span>
@@ -79,11 +94,49 @@ function RiskScore({ label, score, max = 10 }) {
 }
 
 const DECISION_STYLES = {
-  IRRIGATE: { bg: "#dcfce7", color: "#16a34a", border: "#22c55e40" },
-  POSTPONE: { bg: "#fef9c3", color: "#d97706", border: "#f59e0b40" },
-  MONITOR:  { bg: "#eff6ff", color: "#0284c7", border: "#0284c740" },
-  ALERT:    { bg: "#fee2e2", color: "#ef4444", border: "#ef444440" },
+  IRRIGATE: { bg: "#dcfce7", color: "#16a34a", border: "#22c55e40", icon: "💧" },
+  POSTPONE: { bg: "#fef9c3", color: "#d97706", border: "#f59e0b40", icon: "⏸️" },
+  MONITOR:  { bg: "#eff6ff", color: "#0284c7", border: "#0284c740", icon: "👁️" },
+  ALERT:    { bg: "#fee2e2", color: "#ef4444", border: "#ef444440", icon: "🚨" },
 };
+
+// Plays AI-generated text aloud in Yoruba via the backend's TTS proxy --
+// icon-first (a universal speaker symbol) for anyone who can't read the
+// message at all. `text` must already BE Hausa (see analyze.js's
+// farmer_message_ha) -- TTS pronounces text, it doesn't translate it.
+function ListenButton({ text, cropColor }) {
+  const [status, setStatus] = useState("idle"); // idle | loading | error
+  const objectUrlRef = useRef(null);
+
+  async function handlePlay() {
+    if (!text || status === "loading") return;
+    setStatus("loading");
+    try {
+      const blob = await fetchHausaAudio(text);
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      const audio = new Audio(url);
+      await audio.play();
+      setStatus("idle");
+    } catch (err) {
+      console.error("[TTS] Failed to play Hausa audio:", err.message);
+      setStatus("error");
+    }
+  }
+
+  return (
+    <button
+      onClick={handlePlay}
+      disabled={!text || status === "loading"}
+      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+      style={{ borderColor: `${cropColor}40`, color: cropColor }}
+    >
+      <Volume2 size={13} />
+      {status === "loading" ? "Generating…" : status === "error" ? "Try again" : "Listen in Hausa"}
+    </button>
+  );
+}
 
 /* ─── Live Sensor Strip ──────────────────────────────────────────── */
 function LiveSensorStrip({ node, cropColor }) {
@@ -153,9 +206,10 @@ function MaterialsCard({ data }) {
           Materials Engineering
         </p>
         <span
-          className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full"
+          className="ml-auto flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full"
           style={{ background: badgeStyle.bg, color: badgeStyle.color }}
         >
+          <span role="img" aria-hidden="true">{isOK ? "✅" : isWarning ? "⚠️" : "🚨"}</span>
           {isOK ? "SAFE" : isWarning ? "WARNING" : "CRITICAL"}
         </span>
       </div>
@@ -227,9 +281,10 @@ function AIIntelligenceCard({ data, cropColor }) {
       <div className="flex items-center gap-3 mb-4">
         <span className="text-xs text-surface-500 font-medium">Decision:</span>
         <span
-          className="text-sm font-bold px-3 py-1 rounded-lg tracking-wide"
+          className="flex items-center gap-1.5 text-sm font-bold px-3 py-1 rounded-lg tracking-wide"
           style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
         >
+          <span className="text-base leading-none" role="img" aria-hidden="true">{style.icon}</span>
           {decision}
         </span>
       </div>
@@ -254,6 +309,16 @@ function AIIntelligenceCard({ data, cropColor }) {
       >
         {data?.farmer_message ?? "No AI report received yet. The backend analyzes each field roughly every 30 minutes."}
       </div>
+
+      {/* Audio -- for farmers who can't read the message above at all.
+          Only shows once real AI data with a Hausa translation exists --
+          the mock/demo fallback above deliberately has no farmer_message_ha
+          (not translating that myself with uncertain Hausa). */}
+      {data?.farmer_message_ha && (
+        <div className="mt-3">
+          <ListenButton text={data.farmer_message_ha} cropColor={cropColor} />
+        </div>
+      )}
     </Card>
   );
 }
@@ -398,7 +463,7 @@ function CropPanel({ cropKey, meta, aiData }) {
         <div className={`absolute inset-0 bg-gradient-to-r ${meta.bg} to-transparent`} />
         <div className="absolute inset-0 flex flex-col justify-end p-5">
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-            Live · Firebase Connected
+            Live · ESP32 Connected
           </p>
           <div className="flex items-center gap-3">
             <img src={meta.icon} alt={meta.label} className="w-10 h-10 rounded-xl object-cover border-2 border-white/30" />

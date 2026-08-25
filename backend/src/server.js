@@ -7,6 +7,7 @@ import cors from "cors";
 import { startScheduler } from "./scheduler.js";
 import { analyzeAllCrops, analyzeCrop } from "./analyze.js";
 import { sendTelegramAlert } from "./telegramService.js";
+import { synthesizeHausa } from "./ttsService.js";
 
 const app = express();
 app.use(cors());
@@ -57,6 +58,27 @@ app.post("/api/alert", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("[Telegram] Send failed:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Reads a piece of AI-generated text aloud in Hausa (see ttsService.js) --
+// for farmers who may not read confidently. Runs the ElevenLabs call
+// on-demand per request; the API key stays server-side, same reasoning
+// as /api/alert. Expects `text` to already BE Hausa (see analyze.js's
+// farmer_message_ha) -- TTS doesn't translate, it only pronounces
+// whatever text it's given.
+app.post("/api/tts", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ ok: false, error: "Missing 'text' string in request body" });
+  }
+  try {
+    const audio = await synthesizeHausa(text);
+    res.set("Content-Type", "audio/mpeg");
+    res.send(audio);
+  } catch (err) {
+    console.error("[TTS] Synthesis failed:", err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });

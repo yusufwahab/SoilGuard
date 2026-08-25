@@ -28,6 +28,8 @@ services:
         sync: false
       - key: CLAUDE_MODEL
         value: claude-opus-5
+      - key: OPENWEATHER_API_KEY
+        sync: false
       - key: FARM_LATITUDE
         sync: false
       - key: FARM_LONGITUDE
@@ -40,3 +42,9 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: ELEVENLABS_MODEL_ID
+        value: eleven_v3

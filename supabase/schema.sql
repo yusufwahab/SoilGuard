@@ -16,6 +16,7 @@
 create table if not exists ai_dashboard (
   crop_key               text primary key,        -- 'rice' | 'beans' | 'yam'
   farmer_message         text,
+  farmer_message_ha      text,                     -- Hausa translation, read aloud by the "Listen" button
   recommended_target     numeric,
   fungi_risk_score       numeric,                  -- 0-10
   fungi_advice           text,
@@ -25,6 +26,9 @@ create table if not exists ai_dashboard (
   sensor_health_pct      numeric,
   updated_at             timestamptz not null default now()
 );
+
+-- Re-run-safety for anyone who created this table before farmer_message_ha existed
+alter table ai_dashboard add column if not exists farmer_message_ha text;
 
 -- ── Target moisture / autopilot setting (per crop) ───────────────────
 create table if not exists targets (
@@ -59,11 +63,17 @@ on conflict (id) do nothing;
 --    if this ever needs to serve multiple farms from one backend.
 create table if not exists farm_settings (
   id         text primary key default 'default',
-  name       text,
+  name       text,       -- display label shown in the UI (may note a fallback -- see state/lga below)
+  state      text,       -- the actual selected state, kept separate from `name` so the
+  lga        text,       -- Settings dropdowns can be reliably preselected on reload
   latitude   numeric,
   longitude  numeric,
   updated_at timestamptz not null default now()
 );
+
+-- Re-run-safety for anyone who created this table before state/lga existed
+alter table farm_settings add column if not exists state text;
+alter table farm_settings add column if not exists lga   text;
 
 insert into farm_settings (id) values ('default') on conflict (id) do nothing;
 
