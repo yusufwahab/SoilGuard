@@ -1,6 +1,6 @@
 import { clsx as cx } from "clsx";
 
-export default function Card({ children, className, tinted, padding = "md", as: Tag = "div" }) {
+export default function Card({ children, className, tinted, padding = "md", as: Tag = "div", ...rest }) {
   const padMap = { none: "", xs: "p-3", sm: "p-4", md: "p-5", lg: "p-6" };
   return (
     <Tag
@@ -10,6 +10,7 @@ export default function Card({ children, className, tinted, padding = "md", as: 
         padMap[padding],
         className
       )}
+      {...rest}
     >
       {children}
     </Tag>

@@ -47,7 +47,9 @@ const HISTORY_LOG_INTERVAL_MS = 30_000;
 // connectivity: "live" for real ESP32 data, "demo" for the simulated
 // fallback -- same shape either way, so nothing downstream needs to
 // special-case it beyond reading node.connectivity for the badge/label.
-function buildNode(cfg, sensor, history, connectivity = "live") {
+// `alerts` defaults to [] for backwards compat, but callers pass the
+// crop's active alerts (see deviceAlerts state below).
+function buildNode(cfg, sensor, history, connectivity = "live", alerts = []) {
   return {
     id:            cfg.id,
     name:          cfg.name,
@@ -62,11 +64,37 @@ function buildNode(cfg, sensor, history, connectivity = "live") {
     solarCharging: true,
     connectivity,
     lastSeen:      Date.now(),
-    alerts:        [],
+    alerts,
     history,
     actuationState: null,
     isRealDevice:  true,
     pumpStatus:    sensor.pumpStatus  ?? 0,
+  };
+}
+
+// A hardware-disconnect alert -- shown as a red critical card in the
+// Alerts page and as a red badge on the Overview field card. Fires when
+// the whole ESP32 device (all 3 crops share one Wi-Fi connection) stops
+// responding for OFFLINE_ALERT_STREAK consecutive polls, same moment the
+// Telegram "device offline" message fires -- both reflect the same signal.
+function buildConnectivityAlert(cfg) {
+  const outageSec = Math.round((OFFLINE_ALERT_STREAK * POLL_INTERVAL_MS) / 1000);
+  return {
+    id: `alert-${cfg.id}-connectivity-${Date.now()}`,
+    fieldId: cfg.id,
+    type: "connectivity",
+    severity: "critical",
+    headline: `${cfg.name} sensor node disconnected`,
+    detail: `The SoilGuard device for ${cfg.crop} hasn't responded to ${OFFLINE_ALERT_STREAK} consecutive checks (~${outageSec}s). It may be powered off, out of Wi-Fi range, or on the wrong network.`,
+    reasoning: [
+      `${OFFLINE_ALERT_STREAK} consecutive failed polls`,
+      `Node: ${cfg.id}`,
+    ],
+    recommendation: "Check that the ESP32 is powered on and connected to the same Wi-Fi network as this dashboard. The field is showing simulated demo data until it reconnects.",
+    actionable: false,
+    daysToImpact: 0,
+    createdAt: Date.now(),
+    status: "active",
   };
 }
 
@@ -96,12 +124,17 @@ export function SensorProvider({ children }) {
   const [espDemoMode, setEspDemoMode] = useState(false);
   const [supabaseOk,  setSupabaseOk]  = useState(true); // optimistic until we hear otherwise
 
+  // ── Alerts (connectivity so far -- see buildConnectivityAlert) ───────
+  const [deviceAlerts, setDeviceAlerts] = useState({ rice: [], beans: [], yam: [] });
+
   const pumpLoadingRefs = useRef({ rice: false, beans: false, yam: false });
   const historyRefs     = useRef({ rice: [], beans: [], yam: [] });
   const pumpStatesRef   = useRef(pumpStates);
   const offlineStreakRef = useRef(0); // consecutive failed polls, whole-device
   const lastLoggedRef    = useRef({ rice: 0, beans: 0, yam: 0 });
+  const deviceAlertsRef  = useRef(deviceAlerts);
   useEffect(() => { pumpStatesRef.current = pumpStates; }, [pumpStates]);
+  useEffect(() => { deviceAlertsRef.current = deviceAlerts; }, [deviceAlerts]);
 
   // ── Mock subscription -- DISABLED ───────────────────────────────
   // useEffect(() => {
@@ -159,7 +192,10 @@ export function SensorProvider({ children }) {
 
           setRealNodes((prev) => ({
             ...prev,
-            [cfg.key]: buildNode(cfg, s, historyRefs.current[cfg.key]),
+            [cfg.key]: buildNode(
+              cfg, s, historyRefs.current[cfg.key], "live",
+              deviceAlertsRef.current[cfg.key].filter((a) => a.status === "active")
+            ),
           }));
 
           setPumpStates((prev) => {
@@ -171,9 +207,19 @@ export function SensorProvider({ children }) {
         });
 
         // Poll succeeded -- if we were previously in an alerted offline
-        // streak, let the phone know it's back before clearing the streak.
+        // streak, let the phone know it's back and resolve the connectivity
+        // alert card before clearing the streak.
         if (offlineStreakRef.current >= OFFLINE_ALERT_STREAK) {
           sendAlertOnce("device:back-online", "🟢 SoilGuard — device is back online.", 0);
+          setDeviceAlerts((prev) => {
+            const next = { ...prev };
+            CROP_CONFIGS.forEach((cfg) => {
+              next[cfg.key] = prev[cfg.key].map((a) =>
+                a.type === "connectivity" && a.status === "active" ? { ...a, status: "resolved" } : a
+              );
+            });
+            return next;
+          });
         }
         offlineStreakRef.current = 0;
         setEspDemoMode(false);
@@ -183,6 +229,15 @@ export function SensorProvider({ children }) {
         offlineStreakRef.current += 1;
         if (offlineStreakRef.current === OFFLINE_ALERT_STREAK) {
           sendAlertOnce("device:offline", `🔴 SoilGuard — device unreachable after ${OFFLINE_ALERT_STREAK} checks. Check power/Wi-Fi.`);
+          // One red "disconnected" alert card per crop -- all 3 share the
+          // same physical ESP32/Wi-Fi connection, so they go down together.
+          setDeviceAlerts((prev) => {
+            const next = { ...prev };
+            CROP_CONFIGS.forEach((cfg) => {
+              next[cfg.key] = [buildConnectivityAlert(cfg), ...prev[cfg.key]];
+            });
+            return next;
+          });
         }
 
         // Fall back to visible, clearly-labeled demo data instead of a
@@ -198,7 +253,10 @@ export function SensorProvider({ children }) {
               ...historyRefs.current[cfg.key],
               { t: Date.now(), moisture: s.moisture, temperature: s.temperature },
             ].slice(-200);
-            next[cfg.key] = buildNode(cfg, s, historyRefs.current[cfg.key], "demo");
+            next[cfg.key] = buildNode(
+              cfg, s, historyRefs.current[cfg.key], "demo",
+              deviceAlertsRef.current[cfg.key].filter((a) => a.status === "active")
+            );
           });
           return next;
         });
@@ -254,6 +312,17 @@ export function SensorProvider({ children }) {
     }
   }
 
+  // ── Alert dismiss (marks it hidden; auto-resolve on reconnect still
+  //    happens separately if the alert is a connectivity one) ──────
+  function handleDismissAlert(fieldId, alertId) {
+    const cropKey = CROP_CONFIGS.find((cfg) => cfg.id === fieldId)?.key;
+    if (!cropKey) return;
+    setDeviceAlerts((prev) => ({
+      ...prev,
+      [cropKey]: prev[cropKey].map((a) => (a.id === alertId ? { ...a, status: "dismissed" } : a)),
+    }));
+  }
+
   // ── Autopilot write ─────────────────────────────────────────────
   async function handleSetAutopilot(cropKey, enabled, target) {
     const newTarget = target ?? autopilotTargets[cropKey];
@@ -282,6 +351,7 @@ export function SensorProvider({ children }) {
     pumpStates,
     pumpLoadings,
     setPumpForCrop:   handleSetPump,
+    dismissAlert:     handleDismissAlert,
     targetMoistures,
     aiDashboard,
     realNodes,
@@ -332,6 +402,12 @@ export function useCropControls() {
     waterSavedL:      ctx.waterSavedL,
     autopilotCount:   ctx.autopilotCount,
   };
+}
+
+export function useAlertActions() {
+  const ctx = useContext(SensorContext);
+  if (!ctx) throw new Error("useAlertActions must be used within SensorProvider");
+  return { dismissAlert: ctx.dismissAlert };
 }
 
 export function useAIDashboard() {

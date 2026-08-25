@@ -72,6 +72,7 @@ function FieldCard({ node, index }) {
   const stress = computeStress(node);
   const corrosion = computeCorrosion(node);
   const hasAlert = node.alerts.length > 0;
+  const hasCriticalAlert = node.alerts.some((a) => a.severity === "critical");
 
   const connLabel =
     node.connectivity === "live" ? "Live" :
@@ -98,7 +99,11 @@ function FieldCard({ node, index }) {
             loading="lazy"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-surface-50/90 to-transparent" />
-          {hasAlert && (
+          {hasCriticalAlert ? (
+            <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wider text-white bg-semantic-red px-1.5 py-0.5 rounded animate-pulse">
+              Disconnected
+            </span>
+          ) : hasAlert && (
             <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wider text-semantic-amber bg-white/80 px-1.5 py-0.5 rounded">
               Action needed
             </span>

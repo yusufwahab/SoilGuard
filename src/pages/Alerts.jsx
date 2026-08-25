@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, Wifi, WifiOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSensorData } from "../data/SensorContext";
-import { dismissAlert } from "../data/mockSensorData";
+import { useSensorData, useAlertActions } from "../data/SensorContext";
 import Card from "../components/ui/Card";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
@@ -91,6 +90,7 @@ function LiveReadingsPanel({ node }) {
 /* ─── Alerts ───────────────────────────────────────────────────── */
 export default function Alerts() {
   const nodes = useSensorData();
+  const { dismissAlert } = useAlertActions();
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
   const [filterField, setFilterField] = useState("all");
@@ -239,6 +239,8 @@ export default function Alerts() {
               month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
             });
 
+            const isCriticalActive = alert.severity === "critical" && alert.status === "active";
+
             return (
               <motion.div
                 key={alert.id}
@@ -246,14 +248,18 @@ export default function Alerts() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: i * 0.04, ease: [0.22, 1, 0.36, 1] }}
               >
-                <Card padding="none" className="overflow-hidden">
+                <Card
+                  padding="none"
+                  className="overflow-hidden"
+                  style={isCriticalActive ? { borderLeft: "3px solid #ef4444", background: "#fef2f2" } : undefined}
+                >
                   {/* ── Alert row ── */}
                   <button
                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-surface-100/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                     onClick={() => setExpandedId(isOpen ? null : alert.id)}
                     aria-expanded={isOpen}
                   >
-                    <span className="text-surface-300 shrink-0">
+                    <span className={isCriticalActive ? "text-semantic-red shrink-0" : "text-surface-300 shrink-0"}>
                       {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                     </span>
 
@@ -261,7 +267,7 @@ export default function Alerts() {
                     <div className="flex-1 min-w-0 sm:hidden">
                       <div className="flex items-center justify-between gap-2 mb-0.5">
                         <span className="text-sm font-semibold text-surface-900 truncate">{alert.fieldName}</span>
-                        <StatusPill status={alert.status} />
+                        {isCriticalActive ? <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded text-white bg-semantic-red">Critical</span> : <StatusPill status={alert.status} />}
                       </div>
                       <span className="text-xs text-surface-500 truncate block">{alert.headline}</span>
                       <span className="text-[10px] text-surface-400 mt-0.5 block">{dateStr}</span>
@@ -270,8 +276,8 @@ export default function Alerts() {
                     {/* Desktop */}
                     <span className="hidden sm:inline text-xs text-surface-400 shrink-0 w-32">{dateStr}</span>
                     <span className="hidden sm:inline text-sm font-semibold text-surface-900 shrink-0 w-28 truncate">{alert.fieldName}</span>
-                    <span className="hidden sm:inline text-sm text-surface-600 flex-1 truncate">{alert.headline}</span>
-                    <StatusPill status={alert.status} />
+                    <span className={isCriticalActive ? "hidden sm:inline text-sm font-semibold text-semantic-red flex-1 truncate" : "hidden sm:inline text-sm text-surface-600 flex-1 truncate"}>{alert.headline}</span>
+                    {isCriticalActive ? <span className="hidden sm:inline shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded text-white bg-semantic-red">Critical</span> : <StatusPill status={alert.status} />}
                   </button>
 
                   {/* ── Expanded detail ── */}

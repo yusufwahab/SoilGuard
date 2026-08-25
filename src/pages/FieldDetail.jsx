@@ -6,8 +6,12 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
 } from "recharts";
-import { useSensorData, useCropControls, useAIDashboard } from "../data/SensorContext";
-import { dismissAlert, startActuation } from "../data/mockSensorData";
+import { useSensorData, useCropControls, useAIDashboard, useAlertActions } from "../data/SensorContext";
+// startActuation is a mock-only demo flow (the tank-actuation modal below is
+// only ever shown for mock nodes -- real devices use pump control/autopilot
+// instead, per the notice in the prescription card). Real alert dismissal
+// goes through useAlertActions() now, not this module.
+import { startActuation } from "../data/mockSensorData";
 import StatusDot from "../components/ui/StatusDot";
 import SeverityTag from "../components/ui/SeverityTag";
 import AnimatedNumber from "../components/ui/AnimatedNumber";
@@ -607,6 +611,7 @@ export default function FieldDetail() {
   const navigate = useNavigate();
   const nodes = useSensorData();
   const node  = nodes.find((n) => n.id === id) ?? null;
+  const { dismissAlert } = useAlertActions();
 
   const [timeRange, setTimeRange] = useState(1);
   const [chartLines, setChartLines] = useState({ moisture: true, pH: true, ec: true, temperature: false });
@@ -874,10 +879,10 @@ export default function FieldDetail() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-surface-50 border border-surface-200 rounded-xl p-5"
-          style={{ borderLeft: "3px solid #f59e0b" }}
+          style={{ borderLeft: `3px solid ${activeAlert.severity === "critical" ? "#ef4444" : "#f59e0b"}` }}
         >
-          <p className="text-[10px] font-bold uppercase tracking-widest text-semantic-amber mb-3">
-            {activeAlert.type === "corrosion" ? "Corrosion alert" : "Crop stress alert"}
+          <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${activeAlert.severity === "critical" ? "text-semantic-red" : "text-semantic-amber"}`}>
+            {activeAlert.type === "connectivity" ? "Connectivity alert" : activeAlert.type === "corrosion" ? "Corrosion alert" : "Crop stress alert"}
           </p>
           <h3 className="text-base font-bold text-surface-900 mb-2">{activeAlert.headline}</h3>
           <p className="text-sm text-surface-600 leading-relaxed mb-4">{activeAlert.recommendation}</p>
@@ -897,10 +902,10 @@ export default function FieldDetail() {
                 {activeAlert.actionLabel}
               </motion.button>
             )}
-            {node.isRealDevice && (
+            {node.isRealDevice && activeAlert.type !== "connectivity" && (
               <p className="text-xs text-surface-400">Use pump control or autopilot above to actuate.</p>
             )}
-            {!node.isRealDevice && (
+            {(!node.isRealDevice || activeAlert.type === "connectivity") && (
               <button
                 className="text-sm text-surface-400 hover:text-surface-700 transition-colors"
                 onClick={() => dismissAlert(node.id, activeAlert.id)}
