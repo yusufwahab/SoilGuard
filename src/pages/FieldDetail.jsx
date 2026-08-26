@@ -704,7 +704,12 @@ export default function FieldDetail() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full ${node.solarCharging ? "bg-semantic-amber" : "bg-surface-300"}`} />
-          <span>{node.solarCharging ? "Solar charging" : "Not charging"}</span>
+          <span>
+            {node.solarCharging ? "Solar charging" : "Not charging"}
+            {node.solarVoltage != null && (
+              <span className="text-surface-400 font-mono"> &middot; {node.solarVoltage.toFixed(1)}V</span>
+            )}
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <StatusDot status={node.connectivity} className="shrink-0" />

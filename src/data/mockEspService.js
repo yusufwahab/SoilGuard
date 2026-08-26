@@ -23,7 +23,16 @@ const state = {
   yam:   { moisture: 50, temperature: 26.8, humidity: 70, pumpStatus: 0 },
 };
 
+// One solar panel powers the whole node, so this is system-wide (not
+// per-crop). Drifts around the ~6V charging threshold so the demo shows the
+// "Solar charging / Not charging" indicator actually toggling.
+let solarVoltage = 6.8;
+
 export function getMockSensorSnapshot() {
+  // System-wide solar reading, drifted once per poll and shared by all crops.
+  solarVoltage = drift(solarVoltage, 0.15, 5.6, 7.6);
+  const solarV = Number(solarVoltage.toFixed(2));
+
   const snapshot = {};
   CROPS.forEach((crop) => {
     const s = state[crop];
@@ -37,7 +46,8 @@ export function getMockSensorSnapshot() {
     snapshot[crop] = {
       moisture: Number(s.moisture.toFixed(0)),
       temperature: Number(s.temperature.toFixed(1)),
-      humidity: Number(s.humidity.toFixed(0)),
+      humidity: Number(s.humidity.toFixed(1)),
+      solarVoltage: solarV,
       pumpStatus: s.pumpStatus,
     };
   });

@@ -45,12 +45,22 @@ const OFFLINE_ALERT_STREAK   = 3;       // consecutive failed polls before alert
 // durability across sessions, but writing every 3s poll would be overkill).
 const HISTORY_LOG_INTERVAL_MS = 30_000;
 
+// Solar panel counts as "charging" above this bus voltage. Matches the >6V
+// rule the firmware measures on the panel (esp-code/.../main.cpp) and the
+// threshold the demo fallback drifts across (mockEspService.js).
+const SOLAR_CHARGING_THRESHOLD_V = 6.0;
+
 // connectivity: "live" for real ESP32 data, "demo" for the simulated
 // fallback -- same shape either way, so nothing downstream needs to
 // special-case it beyond reading node.connectivity for the badge/label.
 // `alerts` defaults to [] for backwards compat, but callers pass the
 // crop's active alerts (see deviceAlerts state below).
 function buildNode(cfg, sensor, history, connectivity = "live", alerts = []) {
+  // Solar bus voltage is a real reading now (system-wide -- one panel powers
+  // the whole node). Treat a missing/null value as "no data" rather than
+  // faking it, and derive the charging indicator from the >6V rule instead of
+  // assuming the panel is always charging.
+  const solarVoltage = sensor.solarVoltage ?? null;
   return {
     id:            cfg.id,
     name:          cfg.name,
@@ -62,7 +72,8 @@ function buildNode(cfg, sensor, history, connectivity = "live", alerts = []) {
     temperature:   sensor.temperature ?? 0,
     humidity:      sensor.humidity    ?? 0,
     battery:       100,
-    solarCharging: true,
+    solarVoltage,
+    solarCharging: solarVoltage != null && solarVoltage > SOLAR_CHARGING_THRESHOLD_V,
     connectivity,
     lastSeen:      Date.now(),
     alerts,
