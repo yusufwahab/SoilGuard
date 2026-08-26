@@ -120,7 +120,7 @@ function RiskGauge({ label, sub, pct, riskLabel, tone, description }) {
    the device should auto-pump toward (real writeTargetMoisture, same
    mechanism as FieldDetail.jsx's AutopilotControl), plus a direct manual
    on/off override underneath for an immediate action. ────────────────── */
-function ManualOverrideTarget({ cropKey, cropLabel }) {
+function ManualOverrideTarget({ cropKey, cropLabel, aiData }) {
   const { autopilotTargets, setAutopilot, pumpStates, pumpLoadings, setPumpForCrop } = useCropControls();
   const target = autopilotTargets[cropKey] ?? 60;
   const [localTarget, setLocalTarget] = useState(target);
@@ -130,6 +130,13 @@ function ManualOverrideTarget({ cropKey, cropLabel }) {
   const pumpLoading = pumpLoadings[cropKey];
   const isPumpOn = pumpState === "ON";
 
+  // The AI's own suggested target (backend/src/analyze.js -- calculated from
+  // this crop, the weather forecast, and current sensor trends). Purely a
+  // suggestion: the farmer's manual slider above is the real target unless
+  // they explicitly tap "Use" -- ignoring it does nothing, on purpose.
+  const recommended = typeof aiData?.recommended_target === "number" ? aiData.recommended_target : null;
+  const followingRecommendation = recommended !== null && recommended === localTarget;
+
   async function commitTarget(val) {
     setSaving(true);
     try {
@@ -137,6 +144,12 @@ function ManualOverrideTarget({ cropKey, cropLabel }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function useRecommendation() {
+    if (recommended === null) return;
+    setLocalTarget(recommended);
+    commitTarget(recommended);
   }
 
   return (
@@ -163,6 +176,28 @@ function ManualOverrideTarget({ cropKey, cropLabel }) {
             />
             <span className="text-[10px] text-surface-400 w-10 shrink-0 text-right">100%</span>
           </div>
+
+          {/* AI recommendation -- a suggestion the farmer can follow or ignore,
+              not a value pushed on them. Doing nothing here keeps whatever
+              the slider above is set to. */}
+          {recommended !== null && (
+            <div className="flex items-center gap-2 mt-2.5">
+              <span className="text-[11px] text-surface-500">
+                AI suggests <strong className="text-surface-800">{recommended}%</strong> for this crop
+              </span>
+              {followingRecommendation ? (
+                <span className="text-[11px] font-semibold text-semantic-green">· using this ✓</span>
+              ) : (
+                <button
+                  onClick={useRecommendation}
+                  disabled={saving}
+                  className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50"
+                >
+                  · Use it
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <p className="text-xs text-surface-600 bg-semantic-green/10 border border-semantic-green/30 rounded-lg px-3 py-2 mt-3">
@@ -399,7 +434,7 @@ export default function AIDashboard() {
           {/* Irrigation Control -- Manual Override Target */}
           {/* key= remounts on zone change so the slider re-reads that
               crop's own target instead of carrying over a stale value */}
-          <ManualOverrideTarget key={selected} cropKey={selected} cropLabel={meta.label} />
+          <ManualOverrideTarget key={selected} cropKey={selected} cropLabel={meta.label} aiData={aiData} />
         </div>
 
         {/* Right column (~30%) */}

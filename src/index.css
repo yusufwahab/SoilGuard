@@ -66,6 +66,16 @@ body {
   animation: ping-live 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+/* Crisp on/off blink for the solar "CHARGING" badge -- a real blink
+   (hard opacity toggle via step-end), not a smooth pulse/fade. */
+@keyframes blink-charging {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+.animate-blink-charging {
+  animation: blink-charging 1s step-end infinite;
+}
+
 /* Page-level fade-in */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }

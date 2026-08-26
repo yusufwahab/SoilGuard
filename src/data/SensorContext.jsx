@@ -145,8 +145,17 @@ export function SensorProvider({ children }) {
   const offlineStreakRef = useRef(0); // consecutive failed polls, whole-device
   const lastLoggedRef    = useRef({ rice: 0, beans: 0, yam: 0 });
   const deviceAlertsRef  = useRef(deviceAlerts);
+  // Autopilot state, mirrored into refs for the same reason as the two
+  // above -- poll() below lives inside a useEffect with an empty deps array
+  // (it only runs once, on mount), so it can only ever see the state as it
+  // was at that first render unless it reads through a ref that's kept
+  // fresh on every change instead.
+  const autopilotEnabledRef = useRef(autopilotEnabled);
+  const autopilotTargetsRef = useRef(autopilotTargets);
   useEffect(() => { pumpStatesRef.current = pumpStates; }, [pumpStates]);
   useEffect(() => { deviceAlertsRef.current = deviceAlerts; }, [deviceAlerts]);
+  useEffect(() => { autopilotEnabledRef.current = autopilotEnabled; }, [autopilotEnabled]);
+  useEffect(() => { autopilotTargetsRef.current = autopilotTargets; }, [autopilotTargets]);
 
   // Ask for browser-notification permission once, early -- no-op if the
   // browser doesn't support it or the user already granted/denied it in
@@ -215,12 +224,32 @@ export function SensorProvider({ children }) {
             ),
           }));
 
+          const liveState = s.pumpStatus === 1 ? "ON" : "OFF";
           setPumpStates((prev) => {
             if (pumpLoadingRefs.current[cfg.key]) return prev; // don't fight an in-flight command
-            const liveState = s.pumpStatus === 1 ? "ON" : "OFF";
             if (prev[cfg.key] === liveState) return prev;
             return { ...prev, [cfg.key]: liveState };
           });
+
+          // ── Autopilot closed loop ─────────────────────────────────
+          // Previously "Autopilot Mode" only wrote a target number to
+          // Supabase that nothing ever read back -- the pump never actually
+          // turned on or off by itself. This is the real loop: it runs off
+          // the SAME live moisture reading everything else on this poll
+          // uses, so it reacts within one 3s tick. Turn ON while moisture
+          // is below the farmer's target; turn OFF the instant moisture
+          // reaches it -- no hysteresis on the stop side, so the pump stops
+          // the moment the reading equals the target, as intended.
+          if (autopilotEnabledRef.current[cfg.key] && !pumpLoadingRefs.current[cfg.key]) {
+            const target = autopilotTargetsRef.current[cfg.key];
+            if (typeof target === "number") {
+              if (s.moisture < target && liveState !== "ON") {
+                handleSetPump(cfg.key, "ON");
+              } else if (s.moisture >= target && liveState !== "OFF") {
+                handleSetPump(cfg.key, "OFF");
+              }
+            }
+          }
         });
 
         // Poll succeeded -- if we were previously in an alerted offline

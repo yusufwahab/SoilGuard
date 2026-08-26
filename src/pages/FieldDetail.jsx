@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { Zap } from "lucide-react";
 import {
   LineChart, Line, AreaChart, Area,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -342,7 +343,7 @@ function AutopilotControl({ cropKey, currentMoisture }) {
                     : `Monitoring — moisture at ${moisture.toFixed(1)}% (target ${localTarget}%)`}
                 </p>
                 <p className="text-[10px] text-surface-400 mt-0.5">
-                  Device reads target every 3 seconds and actuates automatically
+                  Checks moisture every 3 seconds and turns the pump on/off automatically — stops the instant it reaches {localTarget}%. Keep this page open for autopilot to keep working.
                 </p>
               </div>
             </div>
@@ -357,7 +358,7 @@ function AutopilotControl({ cropKey, currentMoisture }) {
             exit={{ opacity: 0 }}
             className="text-xs text-surface-400 leading-relaxed mt-2"
           >
-            Enable to let SoilGuard autonomously maintain your target soil moisture — the device will activate and stop the pump automatically.
+            Enable to let SoilGuard autonomously maintain your target soil moisture — the app will turn the pump on and off automatically while this page stays open.
           </motion.p>
         )}
       </AnimatePresence>
@@ -370,9 +371,27 @@ function AutopilotControl({ cropKey, currentMoisture }) {
 }
 
 /* ─── AI Dashboard Card ────────────────────────────────────────── */
+const DECISION_STYLE = {
+  IRRIGATE: "text-semantic-green",
+  POSTPONE: "text-semantic-amber",
+  MONITOR:  "text-surface-500",
+  ALERT:    "text-semantic-red",
+};
+
+// Matches the real backend/src/analyze.js schema exactly (farmer_message,
+// recommended_target, decision, fungi_risk_score, corrosion_risk_score,
+// sensor_health_pct, material_health_status) -- this used to speculatively
+// look for field names like data.recommendation/data.confidence that the
+// backend never actually sends, so it silently never rendered the real
+// fields properly. Fixed to match, and to give the recommended target an
+// actual "use it or ignore it" choice instead of just writing it to
+// Supabase with nothing reading it back.
 function AIDashboardCard({ cropKey }) {
   const aiDashboard = useAIDashboard();
+  const { autopilotTargets, setAutopilot } = useCropControls();
   const data = aiDashboard[cropKey];
+  const [applying, setApplying] = useState(false);
+  const [justApplied, setJustApplied] = useState(false);
 
   if (!data) {
     return (
@@ -391,21 +410,23 @@ function AIDashboardCard({ cropKey }) {
     );
   }
 
-  // Handle any shape the backend might send
-  const recommendation = data.recommendation ?? data.message ?? data.text ?? data.summary ?? null;
-  const action         = data.action ?? data.suggested_action ?? data.next_action ?? null;
-  const confidence     = data.confidence ?? data.score ?? null;
-  const risk           = data.risk_level ?? data.severity ?? null;
-  const ts             = data.timestamp ?? data.generated_at ?? null;
+  const hasTarget = typeof data.recommended_target === "number";
+  const currentTarget = autopilotTargets[cropKey];
+  const alreadyUsingIt = hasTarget && currentTarget === data.recommended_target;
 
-  const confPct = confidence !== null
-    ? (typeof confidence === "number" && confidence <= 1 ? confidence * 100 : Number(confidence))
-    : null;
-
-  const riskColor =
-    risk === "critical" || risk === "high"  ? "text-semantic-red" :
-    risk === "watch"    || risk === "medium" ? "text-semantic-amber" :
-    "text-semantic-green";
+  async function handleUseTarget() {
+    setApplying(true);
+    try {
+      // Turns autopilot on (if it wasn't already) with the AI's number --
+      // the closed loop in SensorContext.jsx then actually acts on it.
+      // The farmer can just not click this at all to ignore the suggestion
+      // and keep their own manual target/control instead.
+      await setAutopilot(cropKey, true, data.recommended_target);
+      setJustApplied(true);
+    } finally {
+      setApplying(false);
+    }
+  }
 
   return (
     <Card tinted>
@@ -413,66 +434,68 @@ function AIDashboardCard({ cropKey }) {
         <p className="text-[10px] font-bold uppercase tracking-widest text-surface-400">
           AI Analysis
         </p>
-        {risk && (
-          <span className={`text-[10px] font-bold uppercase tracking-wide ${riskColor} ml-1`}>
-            · {risk}
+        {data.decision && (
+          <span className={`text-[10px] font-bold uppercase tracking-wide ml-1 ${DECISION_STYLE[data.decision] ?? "text-surface-500"}`}>
+            · {data.decision}
           </span>
         )}
-        {ts && (
+        {data.updated_at && (
           <span className="text-[10px] text-surface-300 ml-auto tabular-nums">
-            {new Date(
-              typeof ts === "number" && ts < 1e12 ? ts * 1000 : ts
-            ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {new Date(data.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>
 
-      {recommendation && (
+      {data.farmer_message && (
         <div className="flex items-start gap-2.5 mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-          <p className="text-sm text-surface-800 leading-relaxed">{recommendation}</p>
+          <p className="text-sm text-surface-800 leading-relaxed">{data.farmer_message}</p>
         </div>
       )}
 
-      {action && (
+      {/* The recommended target itself, with a real follow-or-ignore choice --
+          not just a number written to Supabase that nothing reads back. */}
+      {hasTarget && (
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-white/60 border border-surface-200 mb-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-surface-400">AI-recommended target</p>
+            <p className="text-lg font-bold text-surface-900 tabular-nums leading-tight">{data.recommended_target}%</p>
+            <p className="text-[10px] text-surface-400 leading-snug">Based on this crop, the weather forecast, and current sensor trends</p>
+          </div>
+          <button
+            onClick={handleUseTarget}
+            disabled={applying || alreadyUsingIt}
+            className="ml-auto shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-60"
+          >
+            {applying ? "Applying…" : alreadyUsingIt ? "In use ✓" : justApplied ? "Applied ✓" : "Use this target"}
+          </button>
+        </div>
+      )}
+
+      {data.material_health_status && (
         <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white/60 border border-surface-200 mb-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-surface-400">Suggested action</span>
-          <span className="text-xs font-semibold text-surface-900 ml-auto">{action}</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-surface-400 shrink-0">Material health</span>
+          <span className="text-xs font-semibold text-surface-900 ml-auto text-right">{data.material_health_status}</span>
         </div>
       )}
 
-      {confPct !== null && (
-        <div>
-          <div className="flex justify-between mb-1">
-            <span className="text-[10px] text-surface-400">AI confidence</span>
-            <span className="text-[10px] font-semibold tabular-nums text-surface-600">{Math.round(confPct)}%</span>
-          </div>
-          <div className="h-1 w-full bg-surface-200 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-accent rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${confPct}%` }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Render any extra keys as data chips */}
-      {(() => {
-        const known = new Set(["recommendation","message","text","summary","action","suggested_action","next_action","confidence","score","risk_level","severity","timestamp","generated_at"]);
-        const extras = Object.entries(data).filter(([k]) => !known.has(k));
-        if (!extras.length) return null;
-        return (
-          <div className="flex flex-wrap gap-2 mt-3">
-            {extras.map(([k, v]) => (
-              <span key={k} className="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-md">
-                {k.replace(/_/g, " ")}: <strong className="text-surface-700">{String(v)}</strong>
-              </span>
-            ))}
-          </div>
-        );
-      })()}
+      <div className="flex flex-wrap gap-2">
+        {typeof data.fungi_risk_score === "number" && (
+          <span className="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-md">
+            Fungi risk: <strong className="text-surface-700">{Math.round(data.fungi_risk_score * 10)}%</strong>
+          </span>
+        )}
+        {typeof data.corrosion_risk_score === "number" && (
+          <span className="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-md">
+            Corrosion risk: <strong className="text-surface-700">{Math.round(data.corrosion_risk_score * 10)}%</strong>
+          </span>
+        )}
+        {typeof data.sensor_health_pct === "number" && (
+          <span className="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-md">
+            Sensor health: <strong className="text-surface-700">{Math.round(data.sensor_health_pct)}%</strong>
+          </span>
+        )}
+      </div>
     </Card>
   );
 }
@@ -703,13 +726,20 @@ export default function FieldDetail() {
           <span>Battery</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${node.solarCharging ? "bg-semantic-amber" : "bg-surface-300"}`} />
-          <span>
-            {node.solarCharging ? "Solar charging" : "Not charging"}
-            {node.solarVoltage != null && (
-              <span className="text-surface-400 font-mono"> &middot; {node.solarVoltage.toFixed(1)}V</span>
-            )}
-          </span>
+          {/* Just an on/off "is it charging right now" indicator -- deliberately no
+              raw voltage number shown (the panel's actual voltage reading isn't
+              meaningful to a farmer, and can misbehave on some wiring/boards). */}
+          {node.solarCharging ? (
+            <span className="flex items-center gap-1 text-semantic-amber font-semibold animate-blink-charging">
+              <Zap size={13} className="fill-current" />
+              CHARGING
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-surface-400">
+              <Zap size={13} />
+              Not charging
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <StatusDot status={node.connectivity} className="shrink-0" />
