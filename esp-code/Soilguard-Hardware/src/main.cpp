@@ -15,7 +15,7 @@ DHT dht(DHTPIN, DHTTYPE);
 #define MOISTURE_BEANS 39   // SVN pin (ADC1)
 #define RELAY_BEANS    17   // Safe Digital Output
 
-#define MOISTURE_YAM   34   // P34 pin (ADC1)
+#define MOISTURE_YAM   35   // P34 pin (ADC1)
 #define RELAY_YAM      18   // Safe Digital Output
 
 // --- SOLAR PANEL VOLTAGE MONITOR ---
@@ -24,10 +24,9 @@ DHT dht(DHTPIN, DHTTYPE);
 // module on GPIO 35 -- an input-only ADC1 pin (ADC1 keeps working while Wi-Fi
 // is on; ADC2 does not). Pins 32/34/36/39 are already taken by the DHT11 and
 // the three moisture probes, so 35 is the free ADC1 pin.
-#define SOLAR_PIN               35   // ADC1 input-only pin for the divider's signal wire
+const int SOLAR_PIN               = 34;   // ADC1 input-only pin for the divider's signal wire
 const float SOLAR_V_REF         = 3.3;  // ESP32 ADC full-scale reference voltage
 const float SOLAR_DIVIDER_RATIO = 5.0;  // voltage-sensor module ratio (Vin / Vpin)
-const int   SOLAR_SAMPLES       = 16;   // ADC samples averaged per reading (smooths jitter)
 
 const int DRY_VALUE = 2700;    // Calibration base value in dry open air
 const int WET_VALUE = 950;     // Calibration base value in pure water fluids
@@ -199,11 +198,6 @@ void setup() {
 
   dht.begin();
 
-  // The solar reading is an ABSOLUTE voltage (unlike the moisture pins, which
-  // are only used relatively via map()), so pin the ADC to its ~0-3.3V full
-  // scale -- exactly what the raw/4095 * 3.3V conversion above assumes.
-  analogSetPinAttenuation(SOLAR_PIN, ADC_11db);
-
   // Initialize output gates under Open-Drain topology to neutralize line leaks
   pinMode(RELAY_RICE, OUTPUT_OPEN_DRAIN);
   pinMode(RELAY_BEANS, OUTPUT_OPEN_DRAIN);
@@ -263,14 +257,10 @@ void loop() {
   moistureYam = constrain(map(rawYam, DRY_VALUE, WET_VALUE, 0, 100), 0, 100);
 
   // --- READ SOLAR PANEL VOLTAGE (system-wide, GPIO 35) ---
-  // A single ESP32 ADC sample is noisy, so average SOLAR_SAMPLES of them to
-  // keep the ~6V "charging" threshold from flickering on jitter. Same math as
-  // any divider module: pin voltage = raw/4095 * Vref, then scale back up by
-  // the divider ratio to recover the panel's real voltage.
-  uint32_t solarRaw = 0;
-  for (int i = 0; i < SOLAR_SAMPLES; i++) solarRaw += analogRead(SOLAR_PIN);
-  float solarVout = ((solarRaw / (float)SOLAR_SAMPLES) * SOLAR_V_REF) / 4095.0;
-  solarVoltage = solarVout * SOLAR_DIVIDER_RATIO;
+  // Read the raw analog value (0 to 4095 for ESP32's 12-bit ADC)
+  int rawValue = analogRead(SOLAR_PIN);
+  float vOut = (rawValue * SOLAR_V_REF) / 4095.0;
+  solarVoltage = vOut * SOLAR_DIVIDER_RATIO;  // assign to global (used by buildSensorJson)
 
   // --- TIMED LOCAL TERMINAL REPORTING BLOCK ---
   if (currentTime - lastTelemetryTime >= telemetryInterval) {

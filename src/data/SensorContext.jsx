@@ -60,7 +60,7 @@ function buildNode(cfg, sensor, history, connectivity = "live", alerts = []) {
   // the whole node). Treat a missing/null value as "no data" rather than
   // faking it, and derive the charging indicator from the >6V rule instead of
   // assuming the panel is always charging.
-  const solarVoltage = sensor.solarVoltage ?? null;
+  const solarVoltage = sensor.solarVoltage != null ? parseFloat(sensor.solarVoltage) : null;
   return {
     id:            cfg.id,
     name:          cfg.name,

@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { Zap } from "lucide-react";
 import { useSensorData, useCropControls } from "../data/SensorContext";
 import StatusDot from "../components/ui/StatusDot";
 import StatBlock from "../components/ui/StatBlock";
@@ -143,9 +144,20 @@ function FieldCard({ node, index }) {
         </div>
 
         {/* Footer */}
-        <p className="text-[10px] text-surface-400 mt-3">
-          {connLabel} &middot; {node.id}
-        </p>
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-[10px] text-surface-400">{connLabel} &middot; {node.id}</p>
+          {node.solarCharging ? (
+            <span className="flex items-center gap-0.5 text-[10px] font-semibold text-semantic-amber">
+              <Zap size={11} className="fill-current" />
+              Charging
+            </span>
+          ) : (
+            <span className="flex items-center gap-0.5 text-[10px] text-surface-300">
+              <Zap size={11} />
+              No solar
+            </span>
+          )}
+        </div>
         </div>
       </Card>
     </motion.div>
