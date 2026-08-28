@@ -84,3 +84,14 @@ body {
 .animate-fade-up {
   animation: fade-up 0.35s ease-out both;
 }
+
+/* Voice-note waveform bar -- bounces while a clip plays (AudioStatusPlayer),
+   sits flat at rest. Each bar gets its own animation-delay/duration inline
+   so the row doesn't move in lockstep like a single pulsing block. */
+@keyframes voice-bar {
+  0%, 100% { transform: scaleY(0.25); }
+  50%      { transform: scaleY(1); }
+}
+.animate-voice-bar {
+  animation: voice-bar 0.9s ease-in-out infinite;
+}

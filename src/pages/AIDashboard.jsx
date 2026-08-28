@@ -4,7 +4,9 @@ import { motion } from "framer-motion";
 import { Volume2, AlertTriangle } from "lucide-react";
 import { useAIDashboard, useCropControls, useSensorData, useDemoStatus } from "../data/SensorContext";
 import { fetchHausaAudio } from "../data/ttsService";
+import { moistureClipKey, corrosionClipKey } from "../data/audioClips";
 import Card from "../components/ui/Card";
+import AudioStatusPlayer from "../components/AudioStatusPlayer";
 
 // Real farm photography (supplied by the user) -- replaces every stock
 // Unsplash placeholder that stood in for these during earlier drafts.
@@ -325,6 +327,13 @@ export default function AIDashboard() {
   const sensorHealthPct = aiData?.sensor_health_pct ?? null; // already 0-100
   const sensorHealthStatus = classifyHealthPct(sensorHealthPct);
 
+  // Pre-recorded voice-note clips for the selected zone -- null when the
+  // current reading doesn't match a recorded scenario (e.g. moisture is in
+  // the normal 30-80% band, or corrosion has no data yet), in which case
+  // AudioStatusPlayer just renders nothing.
+  const selectedMoistureClip = moistureClipKey(nodeFor(selected)?.moisture);
+  const selectedCorrosionClip = corrosionClipKey(corrosionRisk.tone);
+
   const farmTone = worstTone(
     ...CROP_KEYS.map((k) => {
       const n = nodeFor(k);
@@ -431,10 +440,18 @@ export default function AIDashboard() {
             />
           </div>
 
+          {/* Voice note -- explains the corrosion/equipment reading above out
+              loud, in Hausa or Yoruba. Hidden when there's no recorded clip
+              for the current risk level (e.g. moderate risk, or no data yet). */}
+          <AudioStatusPlayer clipKey={selectedCorrosionClip} />
+
           {/* Irrigation Control -- Manual Override Target */}
           {/* key= remounts on zone change so the slider re-reads that
               crop's own target instead of carrying over a stale value */}
           <ManualOverrideTarget key={selected} cropKey={selected} cropLabel={meta.label} aiData={aiData} />
+
+          {/* Voice note -- explains the soil moisture reading out loud. */}
+          <AudioStatusPlayer clipKey={selectedMoistureClip} />
         </div>
 
         {/* Right column (~30%) */}

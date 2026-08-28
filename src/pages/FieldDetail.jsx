@@ -13,11 +13,13 @@ import { useSensorData, useCropControls, useAIDashboard, useAlertActions } from 
 // instead, per the notice in the prescription card). Real alert dismissal
 // goes through useAlertActions() now, not this module.
 import { startActuation } from "../data/mockSensorData";
+import { moistureClipKey, corrosionClipKey } from "../data/audioClips";
 import StatusDot from "../components/ui/StatusDot";
 import SeverityTag from "../components/ui/SeverityTag";
 import AnimatedNumber from "../components/ui/AnimatedNumber";
 import Card from "../components/ui/Card";
 import Sparkline from "../components/Sparkline";
+import AudioStatusPlayer from "../components/AudioStatusPlayer";
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 
@@ -673,6 +675,14 @@ export default function FieldDetail() {
   const serviceMos = Math.max(1, Math.round(60 - corrosion * 0.55));
   const cropKey   = getCropKey(node.id);
 
+  // Pre-recorded Hausa/Yoruba voice notes for this field's current readings
+  // -- same good/warn/bad bands the numbers above already use, so the audio
+  // never disagrees with what's on screen. null when nothing was recorded
+  // for the current band, in which case AudioStatusPlayer renders nothing.
+  const corrosionTone = corrosion > 66 ? "bad" : corrosion > 33 ? "warn" : "good";
+  const moistureClip  = moistureClipKey(node.moisture);
+  const corrosionClip = corrosionClipKey(corrosionTone);
+
   return (
     <motion.div
       className="max-w-5xl space-y-5 pb-12"
@@ -783,6 +793,9 @@ export default function FieldDetail() {
         ))}
       </div>
 
+      {/* Voice note -- soil moisture reading explained aloud, Hausa or Yoruba */}
+      <AudioStatusPlayer clipKey={moistureClip} />
+
       {/* ── Dual prediction ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Crop Stress */}
@@ -845,6 +858,9 @@ export default function FieldDetail() {
           </p>
         </Card>
       </div>
+
+      {/* Voice note -- corrosion/equipment status explained aloud, Hausa or Yoruba */}
+      <AudioStatusPlayer clipKey={corrosionClip} />
 
       {/* ── Historical chart ── */}
       <Card>
